@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Take-off Data Machine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.5.0/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+    <script>if (location.protocol === 'file:') location.replace('http://127.0.0.1:4175/');</script>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      body{background:linear-gradient(rgba(246,245,239,.35),rgba(246,245,239,.48)),radial-gradient(circle at 95% 2%,rgba(227,239,201,.16) 0,transparent 22rem),url('assets/misty-valley.jpg') center/cover fixed}
+      h1,h1 em{font-family:'Libre Baskerville',Georgia,serif!important;color:#3f4a21!important;font-style:normal!important;letter-spacing:-.065em}
+      .i-dot{position:relative;display:inline-block}.i-dot::after{content:'';position:absolute;width:.11em;height:.11em;left:50%;top:.10em;transform:translateX(-50%);border-radius:50%;background:#dc143c}
+      .shell{position:relative}.controls{background:rgba(255,255,255,.52);padding:20px;gap:24px;box-shadow:0 12px 28px rgba(21,35,31,.045)}
+      .controls button{border-radius:2px;box-shadow:inset 0 0 0 1px rgba(21,35,31,.08),0 5px 10px rgba(81,106,18,.12);transition:transform .15s ease,box-shadow .15s ease}.controls button:hover{transform:translateY(-1px);box-shadow:inset 0 0 0 1px rgba(21,35,31,.08),0 8px 14px rgba(81,106,18,.18)}
+      .notice{padding:10px 12px;border-left:3px solid var(--lime);background:rgba(255,255,255,.38)}.notice.error{border-left-color:var(--orange)}
+      .summary{background:rgba(255,255,255,.48);box-shadow:0 10px 24px rgba(21,35,31,.035)}.summary div{padding:18px 16px}.summary div+div{padding-left:20px}
+      .results{padding:24px;background:rgba(255,255,255,.42);box-shadow:0 10px 30px rgba(21,35,31,.035)}.table-wrap{background:rgba(255,255,255,.72)}th{background:#edf0e7;position:sticky;top:0;z-index:1}tbody tr{transition:background .12s ease}td{font-variant-numeric:tabular-nums}
+      .detail{background:rgba(255,255,255,.36);padding:0 18px}.detail-toggle{transition:color .15s ease}.detail-toggle:hover{color:var(--forest)}.detail.open{box-shadow:0 10px 24px rgba(21,35,31,.03)}
+      .method{border-top:1px solid var(--line);margin-top:46px}.text-button{font-weight:600}.param-tabs button{transition:background .15s ease,color .15s ease}.param-tabs button:hover{background:#e9eee2;color:var(--forest)}
+      .developer-note{margin-top:28px;padding:26px 28px;background:rgba(55,73,35,.78);color:#f7f5eb;box-shadow:0 12px 28px rgba(21,35,31,.10)}.developer-note .section-label{color:#dbe8b6}.developer-note h2{margin:.35rem 0 .9rem;color:#fff;font-family:'Libre Baskerville',Georgia,serif;font-size:1.18rem}.developer-note p{max-width:760px;margin:0;color:rgba(255,255,255,.92);line-height:1.7}.developer-note p+p{margin-top:.8rem}.developer-note a{color:#e4efb9;text-underline-offset:.18em}
+      .precip-cell{font-weight:600}.precip-trace{background:#e6f4f2;color:#256a68}.precip-light{background:#d9f0a8;color:#486d11}.precip-moderate{background:#ffe59a;color:#745300}.precip-heavy{background:#ffc1a9;color:#8c3322}
+      @media(max-width:760px){.controls{padding:16px}.results{padding:16px}.detail{padding:0 12px}.summary div{padding:14px 10px}}
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="eyebrow"><span></span> FLIGHT WEATHER WORKBENCH</div>
+        <h1>Take-Off Data<br /><em>mach<span class="i-dot">ı</span>ne</em></h1>
+        <p class="intro">Bias-corrected multi-model weather guidance, prepared around your departure window.</p>
+      </header>
+
+      <section class="controls" aria-label="Forecast request">
+        <label>Airport ICAO<input id="icao" maxlength="4" value="KJFK" autocomplete="off" spellcheck="false" /></label>
+        <label>Take-off window starts (UTC)<input id="start" type="datetime-local" /></label>
+        <label>Take-off window ends (UTC)<input id="end" type="datetime-local" /></label>
+        <button id="generate" type="button"><span>Generate data</span><b>↗</b></button>
+      </section>
+
+      <section id="notice" class="notice">Enter an ICAO code and a UTC window. The previous 72 hours of METAR are used to estimate each model’s bias.</section>
+
+      <section id="summary" class="summary hidden">
+        <div><small>AIRPORT</small><strong id="airportName">—</strong></div>
+        <div><small>BIAS WINDOW</small><strong>Previous 72 hours</strong></div>
+        <div><small>MODELS USED</small><strong id="modelCount">—</strong></div>
+        <div><small>METAR MATCHES</small><strong id="metarCount">—</strong></div>
+      </section>
+
+      <section id="results" class="results hidden">
+        <div class="section-heading">
+          <div><span class="section-label">BIAS-CORRECTED ENSEMBLE</span><h2>Take-off guidance <small>UTC</small></h2></div>
+          <button id="download" class="text-button" type="button">Download CSV ↓</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time (UTC)</th><th>Temp<br /><small>°C</small></th><th>Wind direction<br /><small>°</small></th><th>Wind speed<br /><small>kt</small></th><th>Surface pressure<br /><small>hPa</small></th><th>Precipitation<br /><small>mm / 30 min</small></th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table></div>
+      </section>
+
+      <section id="metarDetail" class="detail hidden">
+        <button id="metarToggle" class="detail-toggle" type="button" aria-expanded="false">
+          <span><i>+</i> View the last 24 hours of METAR</span><small>AWC observations · UTC</small>
+        </button>
+        <div class="detail-panel metar-panel">
+          <div class="section-heading"><div><span class="section-label">OBSERVED CONDITIONS</span><h2>Last 24 hours of METAR <small>UTC</small></h2></div></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Observation time (UTC)</th><th>Temp<br /><small>°C</small></th><th>Wind direction<br /><small>reported / used</small></th><th>Wind speed<br /><small>kt</small></th><th>Altimeter<br /><small>hPa</small></th></tr></thead>
+            <tbody id="metarTableBody"></tbody>
+          </table></div>
+          <p class="chart-note">For a variable-wind report, the first value remains <code>VRB</code>; the value after the slash is the carry-forward or circularly interpolated direction used for bias correction.</p>
+        </div>
+      </section>
+
+      <section id="detail" class="detail hidden">
+        <button id="detailToggle" class="detail-toggle" type="button" aria-expanded="false">
+          <span><i>+</i> Inspect individual model forecasts</span><small>Raw values · full forecast window</small>
+        </button>
+        <div id="detailPanel" class="detail-panel">
+          <div class="chart-topline"><div><span class="section-label">MODEL DETAIL</span><h2 id="chartTitle">Temperature</h2></div><div class="param-tabs" id="parameterTabs"></div></div>
+          <div class="chart-wrap"><canvas id="chart" aria-label="Model forecast comparison" role="img"></canvas></div>
+          <p class="chart-note">The chart covers the complete requested forecast window. Thin lines are uncorrected model forecasts. Dots are observed METAR values. Wind directions use arrows; precipitation colors show intensity.</p>
+        </div>
+      </section>
+
+      <section id="modelDetail" class="detail hidden">
+        <button id="modelToggle" class="detail-toggle" type="button" aria-expanded="false">
+          <span><i>+</i> Model details and recent RMSE</span><small>METAR-verified · UTC</small>
+        </button>
+        <div class="detail-panel model-panel">
+          <div class="section-heading"><div><span class="section-label">MODEL DETAILS</span><h2>Resolution, refresh and verification</h2></div></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Model</th><th>Resolution</th><th>Refresh</th><th>Lookback</th><th>Temp<br /><small>RMSE °C</small></th><th>Wind dir<br /><small>RMSE °</small></th><th>Wind speed<br /><small>RMSE kt</small></th><th>Pressure<br /><small>RMSE hPa</small></th></tr></thead>
+            <tbody id="modelTableBody"></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <section class="method">
+        <div><span class="section-label">METHOD</span><h2>What is being corrected?</h2></div>
+        <p>Each available Open-Meteo model is compared with the closest AWC METAR observation. Recent observations receive more influence, outlying errors are constrained, and each parameter is weighted by each model’s recent local skill. METAR variable winds are filled from the last actual direction or circularly interpolated between surrounding actual reports. Precipitation remains uncorrected because METAR does not supply a comparable amount.</p>
+      </section>
+
+      <section class="developer-note" aria-label="Developer's Note">
+        <span class="section-label">DEVELOPER'S NOTE</span>
+        <h2>Developer's Note</h2>
+        <p>Despite remarkable advances in technology, nothing can replace the expertise, judgement, and experience of pilots and flight dispatchers. This simple tool has been created to make their work a little easier.</p>
+        <p>The tool uses publicly available global and regional weather-model forecasts, along with METAR data. It was independently developed by meteorologist Amlan Chatterjee as a personal-interest project.</p>
+        <p>This tool is intended for informational and supplementary use only. It must not be treated as a substitute for official aviation weather products, operational procedures, regulatory guidance, or professional judgement. The developer accepts no responsibility or liability for any accident, operational decision, financial loss, or other consequence arising from its use.</p>
+        <p>For feedback, suggestions, or collaboration enquiries, please contact <a href="mailto:amlanstudy@gmail.com">amlanstudy@gmail.com</a>.</p>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
