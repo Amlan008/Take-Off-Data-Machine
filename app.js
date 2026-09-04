@@ -185,6 +185,18 @@ function interpolate(points,date){ const exact=points.find(p=>p.time.getTime()==
 function precipStyle(value){ if(value>=2.5) return {className:'precip-heavy',color:'#e9704e',label:'Heavy precipitation'}; if(value>=1) return {className:'precip-moderate',color:'#d99b16',label:'Moderate precipitation'}; if(value>=.1) return {className:'precip-light',color:'#75aa2d',label:'Light precipitation'}; if(value>0) return {className:'precip-trace',color:'#399e9a',label:'Trace precipitation'}; return {className:'',color:'#b9c1bd',label:'No precipitation'}; }
 const formatValue=(value,digits=1)=>Number.isFinite(value)?value.toFixed(digits):'—';
 const formatDirection=value=>Number.isFinite(value)?Math.round(value).toString().padStart(3,'0')+'°':'—';
+async function allSettledLimited(items, task, limit=2){
+  const results=new Array(items.length); let next=0;
+  async function worker(){
+    while(next<items.length){
+      const index=next++;
+      try{ results[index]={status:'fulfilled',value:await task(items[index])}; }
+      catch(reason){ results[index]={status:'rejected',reason}; }
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(limit,items.length)},worker));
+  return results;
+}
 
 async function generate(){
   const icao=$('icao').value.trim().toUpperCase(); const start=toUtc($('start').value), end=toUtc($('end').value); if(!/^[A-Z]{4}$/.test(icao)) return notice('Please enter a four-letter ICAO code (for example, KJFK or EGLL).','error'); if(!Number.isFinite(start.getTime())||!Number.isFinite(end.getTime())||end<=start) return notice('Choose a valid UTC take-off window where the end is after the start.','error');
@@ -194,12 +206,12 @@ async function generate(){
     const {observations,location}=await getMetars(icao); const calibrationEnd=new Date(), calibrationStart=new Date(calibrationEnd.getTime()-72*3600e3);
     notice('Fetching historical model guidance and estimating model-specific bias…','loading');
     const candidates=[...MODEL_CATALOG,...regionalModels(location.lat,location.lon)];
-    const historical=await Promise.allSettled(candidates.map(async ([id,name])=>unpackModel(await fetchJson(queryUrl('https://historical-forecast-api.open-meteo.com/v1/forecast',location.lat,location.lon,calibrationStart,calibrationEnd,id)),id,name)));
+    const historical=await allSettledLimited(candidates,async ([id,name])=>unpackModel(await fetchJson(queryUrl('https://historical-forecast-api.open-meteo.com/v1/forecast',location.lat,location.lon,calibrationStart,calibrationEnd,id)),id,name));
     const usable=historical.filter(x=>x.status==='fulfilled').map(x=>x.value); if(!usable.length) throw new Error('Open-Meteo did not return an eligible model for this location.');
     usable.forEach(m=>{m.bias=calculateBias(m,observations);m.corrected=correct(m).corrected;});
     notice('Applying the METAR-derived biases to the requested forecast window…','loading');
     const outputHost=end<=new Date()?'https://historical-forecast-api.open-meteo.com/v1/forecast':'https://api.open-meteo.com/v1/forecast';
-    const requested=await Promise.allSettled(usable.map(async old=>{const url=outputHost.includes('historical')?queryUrl(outputHost,location.lat,location.lon,start,end,old.id):liveForecastRangeUrl(location.lat,location.lon,start,end,old.id); const data=await fetchJson(url); const m=unpackModel(data,old.id,old.name); m.bias=old.bias; m.weights=old.weights; return correct(m);}));
+    const requested=await allSettledLimited(usable,async old=>{const url=outputHost.includes('historical')?queryUrl(outputHost,location.lat,location.lon,start,end,old.id):liveForecastRangeUrl(location.lat,location.lon,start,end,old.id); const data=await fetchJson(url); const m=unpackModel(data,old.id,old.name); m.bias=old.bias; m.weights=old.weights; return correct(m);});
     const models=requested.filter(x=>x.status==='fulfilled').map(x=>x.value);
     const weatherNext=await weatherNextModel(location.lat,location.lon,calibrationStart,calibrationEnd,start,end,observations).catch(error=>{console.warn('WeatherNext unavailable',error);return null;}); if(weatherNext) models.push(weatherNext);
     if(!models.length) throw new Error('The requested time window is unavailable from the returned models.'); assignAdaptiveWeights(models);

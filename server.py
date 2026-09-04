@@ -2,8 +2,10 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 import json
 import os
+import time
 
 ALLOWED_HOURLY = 'temperature_2m,wind_direction_10m,wind_speed_10m,surface_pressure,precipitation'
 
@@ -29,13 +31,24 @@ class AppHandler(SimpleHTTPRequestHandler):
     def proxy(self, url):
         try:
             request = Request(url, headers={'User-Agent': 'TakeoffDataMachine/1.0'})
-            with urlopen(request, timeout=30) as response:
-                body = response.read()
-                self.send_response(response.status)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Cache-Control', 'no-store')
-                self.end_headers()
-                self.wfile.write(body)
+            # Open-Meteo can throttle shared cloud egress addresses. Retry a
+            # small number of rate-limited requests instead of failing an
+            # otherwise valid forecast generation immediately.
+            for attempt in range(3):
+                try:
+                    with urlopen(request, timeout=30) as response:
+                        body = response.read()
+                        self.send_response(response.status)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Cache-Control', 'no-store')
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+                except HTTPError as exc:
+                    if exc.code != 429 or attempt == 2:
+                        raise
+                    retry_after=exc.headers.get('Retry-After')
+                    time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else attempt + 1)
         except Exception as exc:
             self.respond_error(f'Upstream data request failed: {exc}', 502)
 
