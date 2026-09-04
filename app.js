@@ -42,6 +42,16 @@ function setDefaults(){ const now=new Date(); now.setUTCMinutes(0,0,0); const st
 function notice(message, type=''){ $('notice').textContent=message; $('notice').className='notice '+type; }
 const isFilePreview=location.protocol==='file:';
 function queryUrl(host, lat, lon, start, end, model){ const source=host.includes('historical')?'historical':'forecast'; const p=new URLSearchParams({latitude:lat,longitude:lon,timezone:'GMT',start_date:start.toISOString().slice(0,10),end_date:end.toISOString().slice(0,10),models:model,wind_speed_unit:'kn',hourly:VARS}); p.set('source',source); return `/api/open-meteo?${p}`; }
+function liveForecastRangeUrl(lat,lon,start,end,model){
+  // Near "now", date-only start_date/end_date requests can be interpreted on
+  // the opposite side of midnight by the upstream API. Ask for a small rolling
+  // range instead, then retain only the user's exact UTC window locally.
+  const now=Date.now(), day=24*3600e3;
+  const pastDays=Math.max(0,Math.min(3,Math.ceil((now-start.getTime())/day)));
+  const forecastDays=Math.max(1,Math.min(16,Math.ceil((end.getTime()-now)/day)+2));
+  const p=new URLSearchParams({source:'forecast',latitude:lat,longitude:lon,timezone:'GMT',past_days:String(pastDays),forecast_days:String(forecastDays),models:model,wind_speed_unit:'kn',hourly:VARS});
+  return `/api/open-meteo?${p}`;
+}
 function weatherNextUrl(lat,lon,start,end,past=false){ const p=new URLSearchParams({source:'ensemble',latitude:lat,longitude:lon,timezone:'GMT',models:'google_weathernext2_ensemble',wind_speed_unit:'kn',hourly:VARS}); if(past){p.set('past_days','3');p.set('forecast_days','0');}else{p.set('start_date',start.toISOString().slice(0,10));p.set('end_date',end.toISOString().slice(0,10));} return `/api/open-meteo?${p}`; }
 
 async function fetchJson(url){ const res=await fetch(url); if(!res.ok) throw new Error(`${res.status} ${res.statusText}`); return res.json(); }
@@ -189,12 +199,12 @@ async function generate(){
     usable.forEach(m=>{m.bias=calculateBias(m,observations);m.corrected=correct(m).corrected;});
     notice('Applying the METAR-derived biases to the requested forecast window…','loading');
     const outputHost=end<=new Date()?'https://historical-forecast-api.open-meteo.com/v1/forecast':'https://api.open-meteo.com/v1/forecast';
-    const requested=await Promise.allSettled(usable.map(async old=>{const data=await fetchJson(queryUrl(outputHost,location.lat,location.lon,start,end,old.id)); const m=unpackModel(data,old.id,old.name); m.bias=old.bias; m.weights=old.weights; return correct(m);}));
+    const requested=await Promise.allSettled(usable.map(async old=>{const url=outputHost.includes('historical')?queryUrl(outputHost,location.lat,location.lon,start,end,old.id):liveForecastRangeUrl(location.lat,location.lon,start,end,old.id); const data=await fetchJson(url); const m=unpackModel(data,old.id,old.name); m.bias=old.bias; m.weights=old.weights; return correct(m);}));
     const models=requested.filter(x=>x.status==='fulfilled').map(x=>x.value);
     const weatherNext=await weatherNextModel(location.lat,location.lon,calibrationStart,calibrationEnd,start,end,observations).catch(error=>{console.warn('WeatherNext unavailable',error);return null;}); if(weatherNext) models.push(weatherNext);
     if(!models.length) throw new Error('The requested time window is unavailable from the returned models.'); assignAdaptiveWeights(models);
     const transientObservation=latestTransientObservation(observations);
-    const nowcast=nowcastTemperatureAdjustment(halfHourly(models,start,end,transientObservation),usable,observations);
+    const nowcast=nowcastTemperatureAdjustment(halfHourly(models,start,end,transientObservation),usable,observations); if(!nowcast.rows.length) throw new Error('The requested UTC window is outside the available forecast range.');
     state={models,observations,ensemble:nowcast.rows,selected:start,chart:null,parameter:'temp',airport:icao}; render(observations.length,location.name,usable.length); notice(`Ready. ${models.length} models contributed to the corrected ensemble.${nowcast.applied?' A short-lived rain-cooling adjustment is active.':''}`,'');
   }catch(error){ console.error(error); notice(error.message || 'Unable to generate data. Please try again.','error'); } finally {$('generate').disabled=false;}
 }
