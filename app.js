@@ -41,7 +41,7 @@ const circularMean = values => weightedCircularMean(values, values.map(()=>1));
 function setDefaults(){ const now=new Date(); now.setUTCMinutes(0,0,0); const start=new Date(now.getTime()+60*60*1000), end=new Date(start.getTime()+6*60*60*1000); $('start').value=utcInput(start); $('end').value=utcInput(end); }
 function notice(message, type=''){ $('notice').textContent=message; $('notice').className='notice '+type; }
 const isFilePreview=location.protocol==='file:';
-function queryUrl(host, lat, lon, start, end, model){ const source=host.includes('historical')?'historical':'forecast'; const p=new URLSearchParams({latitude:lat,longitude:lon,timezone:'GMT',start_date:start.toISOString().slice(0,10),end_date:end.toISOString().slice(0,10),models:model,wind_speed_unit:'kn',hourly:VARS}); p.set('source',source); return `/api/open-meteo?${p}`; }
+function queryUrl(host, lat, lon, start, end, model){ const p=new URLSearchParams({latitude:lat,longitude:lon,timezone:'GMT',start_date:start.toISOString().slice(0,10),end_date:end.toISOString().slice(0,10),models:model,wind_speed_unit:'kn',hourly:VARS}); return `${host}?${p}`; }
 function liveForecastRangeUrl(lat,lon,start,end,model){
   // Near "now", date-only start_date/end_date requests can be interpreted on
   // the opposite side of midnight by the upstream API. Ask for a small rolling
@@ -49,10 +49,10 @@ function liveForecastRangeUrl(lat,lon,start,end,model){
   const now=Date.now(), day=24*3600e3;
   const pastDays=Math.max(0,Math.min(3,Math.ceil((now-start.getTime())/day)));
   const forecastDays=Math.max(1,Math.min(16,Math.ceil((end.getTime()-now)/day)+2));
-  const p=new URLSearchParams({source:'forecast',latitude:lat,longitude:lon,timezone:'GMT',past_days:String(pastDays),forecast_days:String(forecastDays),models:model,wind_speed_unit:'kn',hourly:VARS});
-  return `/api/open-meteo?${p}`;
+  const p=new URLSearchParams({latitude:lat,longitude:lon,timezone:'GMT',past_days:String(pastDays),forecast_days:String(forecastDays),models:model,wind_speed_unit:'kn',hourly:VARS});
+  return `https://api.open-meteo.com/v1/forecast?${p}`;
 }
-function weatherNextUrl(lat,lon,start,end,past=false){ const p=new URLSearchParams({source:'ensemble',latitude:lat,longitude:lon,timezone:'GMT',models:'google_weathernext2_ensemble',wind_speed_unit:'kn',hourly:VARS}); if(past){p.set('past_days','3');p.set('forecast_days','0');}else{p.set('start_date',start.toISOString().slice(0,10));p.set('end_date',end.toISOString().slice(0,10));} return `/api/open-meteo?${p}`; }
+function weatherNextUrl(lat,lon,start,end,past=false){ const p=new URLSearchParams({latitude:lat,longitude:lon,timezone:'GMT',models:'google_weathernext2_ensemble',wind_speed_unit:'kn',hourly:VARS}); if(past){p.set('past_days','3');p.set('forecast_days','0');}else{p.set('start_date',start.toISOString().slice(0,10));p.set('end_date',end.toISOString().slice(0,10));} return `https://api.open-meteo.com/v1/ensemble?${p}`; }
 
 async function fetchJson(url){ const res=await fetch(url); if(!res.ok) throw new Error(`${res.status} ${res.statusText}`); return res.json(); }
 async function getMetars(icao){
