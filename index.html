@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Take-off Data Machine</title>
+    <title>Weather machine</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
@@ -21,18 +21,22 @@
       .notice{padding:10px 12px;border-left:3px solid var(--lime);background:rgba(255,255,255,.38)}.notice.error{border-left-color:var(--orange)}
       .summary{background:rgba(255,255,255,.48);box-shadow:0 10px 24px rgba(21,35,31,.035)}.summary div{padding:18px 16px}.summary div+div{padding-left:20px}
       .results{padding:24px;background:rgba(255,255,255,.42);box-shadow:0 10px 30px rgba(21,35,31,.035)}.table-wrap{background:rgba(255,255,255,.72)}th{background:#edf0e7;position:sticky;top:0;z-index:1}tbody tr{transition:background .12s ease}td{font-variant-numeric:tabular-nums}
-      .detail{background:rgba(255,255,255,.36);padding:0 18px}.detail-toggle{transition:color .15s ease}.detail-toggle:hover{color:var(--forest)}.detail.open{box-shadow:0 10px 24px rgba(21,35,31,.03)}
+      .detail{background:rgba(255,255,255,.36);padding:0 18px}.detail-toggle{transition:color .15s ease}.detail-toggle:hover{color:var(--forest)}.detail.open{box-shadow:0 10px 24px rgba(21,35,31,.03)}#detail{background:#fff}
       .method{border-top:1px solid var(--line);margin-top:46px}.text-button{font-weight:600}.param-tabs button{transition:background .15s ease,color .15s ease}.param-tabs button:hover{background:#e9eee2;color:var(--forest)}
       .developer-note{margin-top:28px;padding:26px 28px;background:rgba(55,73,35,.78);color:#f7f5eb;box-shadow:0 12px 28px rgba(21,35,31,.10)}.developer-note .section-label{color:#dbe8b6}.developer-note h2{margin:.35rem 0 .9rem;color:#fff;font-family:'Libre Baskerville',Georgia,serif;font-size:1.18rem}.developer-note p{max-width:760px;margin:0;color:rgba(255,255,255,.92);line-height:1.7}.developer-note p+p{margin-top:.8rem}.developer-note a{color:#e4efb9;text-underline-offset:.18em}
       .precip-cell{font-weight:600}.precip-trace{background:#e6f4f2;color:#256a68}.precip-light{background:#d9f0a8;color:#486d11}.precip-moderate{background:#ffe59a;color:#745300}.precip-heavy{background:#ffc1a9;color:#8c3322}
-      @media(max-width:760px){.controls{padding:16px}.results{padding:16px}.detail{padding:0 12px}.summary div{padding:14px 10px}}
+      .raw-metar{min-width:620px;text-align:left;font-size:12px;white-space:pre-wrap;line-height:1.55}.taf-block{margin-top:26px;padding:18px;background:rgba(255,255,255,.45);border-top:1px solid var(--line)}.raw-report{margin:10px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:500 12px/1.65 'DM Mono',monospace;color:var(--ink)}
+      .briefing{margin-top:28px;padding:25px 28px;background:rgba(255,255,255,.48);border-top:1px solid var(--ink);border-bottom:1px solid var(--line);box-shadow:0 10px 24px rgba(21,35,31,.035)}.briefing h2{margin:.35rem 0 .75rem}.briefing p{max-width:930px;margin:0;font-size:15px;line-height:1.7}.briefing-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:18px}.briefing-grid>div{padding:17px;background:rgba(255,255,255,.35);border-left:2px solid var(--forest)}.briefing-grid p{margin-top:8px}.briefing-note,.runway-note{margin:13px 0 0!important;color:var(--muted);font-size:12px!important;line-height:1.55!important}.calculator-controls{display:flex;align-items:end;gap:18px;flex-wrap:wrap}.calculator-controls label{display:flex;flex-direction:column;gap:7px;color:var(--muted);font:500 10px 'DM Mono',monospace;letter-spacing:.07em;text-transform:uppercase}.calculator-controls input,.calculator-controls select{min-width:190px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:9px;color:var(--ink);font:500 12px 'DM Mono',monospace}.calculator-controls button{border:0;background:var(--lime);padding:10px 14px;color:var(--ink);font:600 13px 'DM Sans',sans-serif;cursor:pointer}.calculator-result{margin-top:22px}.calculator-result table{min-width:620px}.calculator-result th,.calculator-result td{text-align:left}.calculator-result td{font-size:13px}.calculator-error{color:#a6422a;font-size:13px}.calculator-time{margin:0 0 12px;color:var(--muted);font-size:13px}
+      .hazard-low{color:#3e6d2c;font-weight:700}.hazard-moderate{color:#996900;font-weight:700}.hazard-high{color:#ae3f2b;font-weight:700}
+      @media(max-width:760px){.controls{padding:16px}.results{padding:16px}.detail{padding:0 12px}.summary div{padding:14px 10px}.briefing-grid{grid-template-columns:1fr}.briefing{padding:20px 16px}.calculator-controls{align-items:stretch}.calculator-controls label,.calculator-controls input,.calculator-controls select{width:100%}}
     </style>
   </head>
   <body>
     <main class="shell">
       <header>
         <div class="eyebrow"><span></span> FLIGHT WEATHER WORKBENCH</div>
-        <h1>Take-Off Data<br /><em>mach<span class="i-dot">ı</span>ne</em></h1>
+        <nav class="app-nav" aria-label="Application sections"><a class="active" href="index.html">Airport forecast</a><a href="flight-review.html">Flight list review</a><a href="operational-tools.html">Wind &amp; bulletins</a><a href="model-resources.html">Model Resources</a></nav>
+        <h1>Weather<br /><em>mach<span class="i-dot">ı</span>ne</em></h1>
         <p class="intro">Bias-corrected multi-model weather guidance, prepared around your departure window.</p>
       </header>
 
@@ -45,50 +49,91 @@
 
       <section id="notice" class="notice">Enter an ICAO code and a UTC window. The previous 72 hours of METAR are used to estimate each model’s bias.</section>
 
+      <section class="bulk-risk relocated" aria-label="Flight-list weather risk check">
+        <div class="section-heading"><div><span class="section-label">FLIGHT LIST CHECK</span><h2>Station weather-risk review <small>UTC</small></h2></div></div>
+        <p>Upload an Excel, CSV or text file with <strong>Flight No, Departure, Arrival, Dept Time, Arriv Time</strong>. Departure and Arrival use IATA codes. Time values use <strong>HHMM/DD</strong>, for example <strong>1836/16</strong>. The review adds a plain-text risk assessment from AWC TAF and Open-Meteo guidance for both stations throughout the flight window.</p>
+        <div class="bulk-controls"><label>Flight list<input id="flightFile" type="file" accept=".xlsx,.xls,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" /></label><label>Schedule month (UTC)<input id="scheduleMonth" type="month" /></label><button id="analyseFlightList" type="button">Analyse flight list</button></div>
+        <div id="bulkNotice" class="bulk-notice" aria-live="polite"></div>
+        <div id="bulkResults" class="bulk-results hidden"><div class="bulk-downloads"><button id="downloadBulkCsv" class="text-button" type="button">Download CSV ↓</button><button id="downloadBulkXlsx" class="text-button" type="button">Download Excel ↓</button></div><div class="table-wrap"><table><thead id="bulkHead"></thead><tbody id="bulkBody"></tbody></table></div></div>
+      </section>
+
       <section id="summary" class="summary hidden">
         <div><small>AIRPORT</small><strong id="airportName">—</strong></div>
         <div><small>BIAS WINDOW</small><strong>Previous 72 hours</strong></div>
         <div><small>MODELS USED</small><strong id="modelCount">—</strong></div>
         <div><small>METAR MATCHES</small><strong id="metarCount">—</strong></div>
+        <div><small>FORECAST CONFIDENCE</small><strong id="forecastConfidence">—</strong></div>
+      </section>
+
+      <section id="briefing" class="briefing hidden" aria-label="Forecast briefing">
+        <span class="section-label">FORECAST BRIEFING</span><h2>Weather Summary <small>UTC</small></h2>
+        <div class="briefing-grid">
+          <div><span class="section-label">TAF DISCUSSION</span><p id="tafBriefingText"></p></div>
+          <div><span class="section-label">MODEL-FORECAST DISCUSSION</span><p id="modelBriefingText"></p></div>
+        </div>
+        <p class="briefing-note">Data-driven summary of the corrected ensemble, current METAR trend and raw TAF. It is supplementary information, not an operational briefing.</p>
       </section>
 
       <section id="results" class="results hidden">
         <div class="section-heading">
-          <div><span class="section-label">BIAS-CORRECTED ENSEMBLE</span><h2>Take-off guidance <small>UTC</small></h2></div>
+          <div><span class="section-label">BIAS-CORRECTED ENSEMBLE</span></div>
           <button id="download" class="text-button" type="button">Download CSV ↓</button>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Time (UTC)</th><th>Temp<br /><small>°C</small></th><th>Wind direction<br /><small>°</small></th><th>Wind speed<br /><small>kt</small></th><th>Surface pressure<br /><small>hPa</small></th><th>Precipitation<br /><small>mm / 30 min</small></th></tr></thead>
+          <thead><tr><th>Time (UTC)</th><th>Temp<br /><small>°C</small></th><th>Wind direction<br /><small>°</small></th><th>Wind speed<br /><small>kt</small></th><th>Wind gust<br /><small>kt</small></th><th>MSL pressure<br /><small>hPa</small></th><th>Precipitation<br /><small>mm / 30 min</small></th><th>Precip. probability<br /><small>%</small></th><th>Thunderstorm probability<br /><small>%</small></th><th>Fog / low-vis probability<br /><small>%</small></th><th>Weather code<br /><small>WMO</small></th><th>Cloud total<br /><small>%</small></th><th>Cloud low<br /><small>%</small></th><th>Cloud mid<br /><small>%</small></th><th>Cloud high<br /><small>%</small></th><th>Confidence<br /><small>source spread</small></th></tr></thead>
           <tbody id="tableBody"></tbody>
         </table></div>
       </section>
 
+      <section id="hazardOutlook" class="briefing hidden" aria-label="Aviation hazard outlook">
+        <span class="section-label">AVIATION HAZARD OUTLOOK</span><h2>Cloud and convection guidance <small>UTC</small></h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time (UTC)</th><th>Cloud base<br /><small>ft AGL*</small></th><th>Freezing level<br /><small>ft MSL</small></th><th>CAPE<br /><small>J/kg</small></th><th>CIN<br /><small>J/kg</small></th><th>Convective risk</th></tr></thead>
+          <tbody id="hazardTableBody"></tbody>
+        </table></div>
+        <p class="briefing-note">Cloud-base guidance depends on model availability and may be a derived field. Convective risk is an ensemble indicator based on thunderstorm probability, precipitation probability and CAPE; it is not a SIGMET, TAF, or operational clearance.</p>
+      </section>
+
+      <section id="windCalculator" class="detail hidden relocated">
+        <button id="windCalculatorToggle" class="detail-toggle" type="button" aria-expanded="false">
+          <span><i>+</i> Wind Calculator</span><small>Exact UTC time · corrected model vs TAF</small>
+        </button>
+        <div class="detail-panel calculator-panel">
+          <div class="section-heading"><div><span class="section-label">RUNWAY WIND CALCULATOR</span><h2>Take-off / landing wind components <small>UTC</small></h2></div></div>
+          <div class="calculator-controls">
+            <label>Take-off / landing time (UTC)<input id="windCalculatorTime" type="datetime-local" /></label>
+            <label>Runway end<select id="runwaySelect" aria-label="Runway end"></select></label>
+            <button id="calculateWind" type="button">Calculate components</button>
+          </div>
+          <div id="windCalculatorResult" class="calculator-result" aria-live="polite"></div>
+          <p class="runway-note">Runway reference: OurAirports static runway data. Published runway data do not establish the active runway or runway availability—confirm against current NOTAMs, ATIS and operational procedures.</p>
+        </div>
+      </section>
+
       <section id="metarDetail" class="detail hidden">
         <button id="metarToggle" class="detail-toggle" type="button" aria-expanded="false">
-          <span><i>+</i> View the last 24 hours of METAR</span><small>AWC observations · UTC</small>
+          <span><i>+</i> View raw METAR and TAF</span><small>AWC bulletins · UTC</small>
         </button>
         <div class="detail-panel metar-panel">
-          <div class="section-heading"><div><span class="section-label">OBSERVED CONDITIONS</span><h2>Last 24 hours of METAR <small>UTC</small></h2></div></div>
+          <div class="section-heading"><div><span class="section-label">AWC BULLETINS</span><h2>Last 24 hours of raw METAR <small>UTC</small></h2></div></div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Observation time (UTC)</th><th>Temp<br /><small>°C</small></th><th>Wind direction<br /><small>reported / used</small></th><th>Wind speed<br /><small>kt</small></th><th>Altimeter<br /><small>hPa</small></th></tr></thead>
+            <thead><tr><th>Observation time (UTC)</th><th>Raw METAR</th></tr></thead>
             <tbody id="metarTableBody"></tbody>
           </table></div>
-          <p class="chart-note">For a variable-wind report, the first value remains <code>VRB</code>; the value after the slash is the carry-forward or circularly interpolated direction used for bias correction.</p>
+          <p class="chart-note">These are the original AWC METAR bulletins. They are not decoded or modified for display.</p>
+          <div class="taf-block"><span class="section-label">CURRENT RAW TAF</span><pre id="tafRaw" class="raw-report">TAF will be requested from AWC when data are generated.</pre></div>
         </div>
       </section>
 
       <section id="detail" class="detail hidden">
-        <button id="detailToggle" class="detail-toggle" type="button" aria-expanded="false">
-          <span><i>+</i> Inspect individual model forecasts</span><small>Raw values · full forecast window</small>
-        </button>
-        <div id="detailPanel" class="detail-panel">
-          <div class="chart-topline"><div><span class="section-label">MODEL DETAIL</span><h2 id="chartTitle">Temperature</h2></div><div class="param-tabs" id="parameterTabs"></div></div>
+        <div id="detailPanel" class="forecast-graphic-panel">
+          <div class="chart-topline"><div><span class="section-label">FORECAST GRAPHIC</span><h2>Ensemble Forecast</h2><p id="chartTitle">Temperature</p></div><div class="param-tabs" id="parameterTabs"></div></div>
           <div class="chart-wrap"><canvas id="chart" aria-label="Model forecast comparison" role="img"></canvas></div>
-          <p class="chart-note">The chart covers the complete requested forecast window. Thin lines are uncorrected model forecasts. Dots are observed METAR values. Wind directions use arrows; precipitation colors show intensity.</p>
+          <p class="chart-note">The chart covers the complete requested forecast window. The horizontal axis uses hourly UTC labels in 24-hour time; the date is shown beneath the first timestamp of each UTC day. Thin lines are uncorrected model forecasts and dots are observed METAR values. The temperature chart’s shaded band is the P10–P90 range across contributing model sources. The wind view uses meteorological wind barbs on the left direction axis and speed on the right axis. In the precipitation view, the ensemble-only grayscale columns show cloud cover by height: high at the top, mid in the middle and low at the bottom; darker gray means greater cover. Below the time axis, <strong>P</strong> is precipitation probability and <strong>C</strong> is total cloud cover.</p>
         </div>
       </section>
 
-      <section id="modelDetail" class="detail hidden">
+      <section id="modelDetail" class="detail hidden relocated">
         <button id="modelToggle" class="detail-toggle" type="button" aria-expanded="false">
           <span><i>+</i> Model details and recent RMSE</span><small>METAR-verified · UTC</small>
         </button>
@@ -103,7 +148,7 @@
 
       <section class="method">
         <div><span class="section-label">METHOD</span><h2>What is being corrected?</h2></div>
-        <p>Each available Open-Meteo model is compared with the closest AWC METAR observation. Recent observations receive more influence, outlying errors are constrained, and each parameter is weighted by each model’s recent local skill. METAR variable winds are filled from the last actual direction or circularly interpolated between surrounding actual reports. Precipitation remains uncorrected because METAR does not supply a comparable amount.</p>
+        <p>Each available Open-Meteo model is compared with the closest AWC METAR observation. Recent observations receive more influence, outlying errors are constrained, and each continuous parameter is weighted by each model’s recent local skill. Rain/precipitation, thunderstorm, and fog/low-visibility signals are separately verified against the previous 72 hours of raw METAR and blended as skill-weighted event likelihoods. METAR variable winds are filled from the last actual direction or circularly interpolated between surrounding actual reports. Precipitation amount remains uncorrected because METAR does not supply a comparable amount.</p>
       </section>
 
       <section class="developer-note" aria-label="Developer's Note">
@@ -115,6 +160,8 @@
         <p>For feedback, suggestions, or collaboration enquiries, please contact <a href="mailto:amlanstudy@gmail.com">amlanstudy@gmail.com</a>.</p>
       </section>
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="app.js"></script>
+    <script src="bulk-risk.js"></script>
   </body>
 </html>

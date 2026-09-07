@@ -1,0 +1,7 @@
+{
+  "name": "take-off-data-machine",
+  "private": true,
+  "scripts": {
+    "start": "python3 server.py"
+  }
+}
