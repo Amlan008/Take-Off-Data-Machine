@@ -81,7 +81,7 @@ async function modelWind(coordinates) {
   const response = await fetch(url);
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.error || !data.hourly?.time?.length) {
-    throw new Error(data.reason || data.message || 'The model forecast is temporarily unavailable.');
+    throw new Error(data.error || data.reason || data.message || 'The model forecast is temporarily unavailable.');
   }
   return data;
 }

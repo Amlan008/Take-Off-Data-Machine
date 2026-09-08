@@ -5,9 +5,14 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 import json
 import os
+import threading
 import time
 
 ALLOWED_HOURLY = 'temperature_2m,wind_direction_10m,wind_speed_10m,wind_gusts_10m,pressure_msl,precipitation,precipitation_probability,weather_code,visibility,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,is_day,cloud_base,freezing_level_height,cape,convective_inhibition'
+PROXY_CACHE = {}
+PROXY_CACHE_LOCK = threading.Lock()
+FRESH_CACHE_SECONDS = 600
+STALE_CACHE_SECONDS = 3600
 
 def load_iata_airports():
     try:
@@ -67,6 +72,11 @@ class AppHandler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def proxy(self, url):
+        now = time.time()
+        with PROXY_CACHE_LOCK:
+            cached = PROXY_CACHE.get(url)
+        if cached and now - cached['saved_at'] < FRESH_CACHE_SECONDS:
+            return self.respond_cached(cached['body'], 'HIT')
         try:
             request = Request(url, headers={'User-Agent': 'TakeoffDataMachine/1.0'})
             # Open-Meteo can throttle shared cloud egress addresses. Retry a
@@ -76,19 +86,28 @@ class AppHandler(SimpleHTTPRequestHandler):
                 try:
                     with urlopen(request, timeout=30) as response:
                         body = response.read()
-                        self.send_response(response.status)
-                        self.send_header('Content-Type', 'application/json')
-                        self.send_header('Cache-Control', 'no-store')
-                        self.end_headers()
-                        self.wfile.write(body)
-                        return
+                        with PROXY_CACHE_LOCK:
+                            PROXY_CACHE[url] = {'body': body, 'saved_at': time.time()}
+                        return self.respond_cached(body, 'MISS')
                 except HTTPError as exc:
                     if exc.code != 429 or attempt == 2:
                         raise
                     retry_after=exc.headers.get('Retry-After')
                     time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else attempt + 1)
         except Exception as exc:
+            # A short-lived stale forecast is safer and more useful than an
+            # empty calculator when a shared cloud IP is rate-limited.
+            if cached and now - cached['saved_at'] < STALE_CACHE_SECONDS:
+                return self.respond_cached(cached['body'], 'STALE')
             self.respond_error(f'Upstream data request failed: {exc}', 502)
+
+    def respond_cached(self, body, cache_state):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Cache-Control', 'private, max-age=60')
+        self.send_header('X-Weather-Machine-Cache', cache_state)
+        self.end_headers()
+        self.wfile.write(body)
 
     def respond_error(self, message, status):
         return self.respond_json({'error': message}, status)
