@@ -11,7 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/luxon@3.5.0/build/global/luxon.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
     <script>if (location.protocol === 'file:') location.replace('http://127.0.0.1:4175/');</script>
-    <link rel="stylesheet" href="styles.css?v=20260909" />
+    <link rel="stylesheet" href="styles.css?v=20260917" />
     <style>
       body{background:linear-gradient(rgba(246,245,239,.35),rgba(246,245,239,.48)),radial-gradient(circle at 95% 2%,rgba(227,239,201,.16) 0,transparent 22rem),url('assets/misty-valley.jpg') center/cover fixed}
       h1,h1 em{font-family:'Libre Baskerville',Georgia,serif!important;color:#2d3b16!important;font-style:normal!important;letter-spacing:-.065em}
@@ -100,8 +100,9 @@
 
       <section id="confidenceAssessment" class="briefing hidden" aria-label="Forecast confidence assessment">
         <span class="section-label">FORECAST CONFIDENCE</span><h2>Model disagreement assessment <small>current airport forecast</small></h2>
-        <p class="briefing-note">Each cell shows the ensemble spread or event likelihood across the selected forecast window. It is based only on the airport currently generated above.</p>
+        <p class="briefing-note">Each cell shows model spread or model agreement across the selected forecast window. Click a cell for its observation-relative lead-time breakdown. It is based only on the airport currently generated above.</p>
         <div id="confidenceMap" class="confidence-map"></div>
+        <div id="confidenceLeadDetail" class="confidence-lead-detail hidden" aria-live="polite"></div>
         <div class="confidence-models"><span class="section-label">PARTICIPATING MODEL SOURCES</span><div id="participatingModels" class="model-chip-list"></div></div>
       </section>
 
@@ -122,9 +123,9 @@
 
       <section id="detail" class="detail hidden">
         <div id="detailPanel" class="forecast-graphic-panel">
-          <div class="chart-topline"><div><span class="section-label">FORECAST GRAPHIC</span><h2>Ensemble Forecast</h2><p id="chartTitle">Temperature</p></div><div class="param-tabs" id="parameterTabs"></div></div>
+          <div class="chart-topline"><div><span class="section-label">FORECAST GRAPHIC</span><h2>Ensemble Forecast</h2><p id="chartTitle">Temperature</p></div><div class="chart-actions"><div class="param-tabs" id="parameterTabs"></div><div class="chart-controls" aria-label="Chart display controls"><button id="modelForecastToggle" type="button" aria-pressed="true">Model forecasts: On</button><button id="chartTooltipToggle" type="button" aria-pressed="true">Tooltips: On</button></div></div></div>
           <div class="chart-wrap"><canvas id="chart" aria-label="Model forecast comparison" role="img"></canvas></div>
-          <p class="chart-note">The chart covers the complete requested forecast window. The horizontal axis uses hourly UTC labels in 24-hour time; the date is shown beneath the first timestamp of each UTC day. Thin lines are uncorrected model forecasts and dots are observed METAR values. The temperature chart’s shaded band is the P10–P90 range across contributing model sources. The wind view uses meteorological wind barbs on the left direction axis and speed on the right axis. In the precipitation view, the ensemble-only grayscale columns show cloud cover by height: high at the top, mid in the middle and low at the bottom; darker gray means greater cover. Below the time axis, <strong>P</strong> is precipitation probability, <strong>C</strong> is total cloud cover, and <strong>Conv</strong> is the ensemble convective-risk category.</p>
+          <p class="chart-note">The chart covers the complete requested forecast window. Single-click a timestamp to add a vertical dotted reference line; double-click it to remove the line. Up to three coloured reference lines can be shown at once. The horizontal axis uses hourly UTC labels in 24-hour time; the date is shown beneath the first timestamp of each UTC day. Thin lines are uncorrected model forecasts and dots are observed METAR values. Shaded P10–P90 bands show spread across contributing sources. The wind view uses meteorological wind barbs on the left direction axis and speed on the right axis. In the precipitation view, coloured bars show ensemble precipitation amount, the blue line and right axis show ensemble precipitation probability, and the thin green / amber / red strip across the top shows low / moderate / high convective risk. The ensemble-only grayscale cloud field is softly blended between high, mid and low levels; darker gray means greater cover. Below the time axis, <strong>C</strong> is total cloud cover.</p>
         </div>
       </section>
 
@@ -143,7 +144,7 @@
 
       <section id="methodSection" class="method">
         <div><span class="section-label">METHOD</span><h2>What is being corrected?</h2></div>
-        <p>Each available Open-Meteo model is compared with the closest AWC METAR observation. Recent observations receive more influence, outlying errors are constrained, and each continuous parameter is weighted by each model’s recent local skill. Wind is bias-corrected as east–west and north–south vector components before being converted back to aviation wind direction and speed; light-wind directions receive less influence because they are inherently variable. Rain/precipitation, thunderstorm, and fog/low-visibility signals are separately verified against the previous 72 hours of raw METAR and blended as skill-weighted event likelihoods. METAR variable winds are filled from the last actual direction or circularly interpolated between surrounding actual reports. Precipitation amount remains uncorrected because METAR does not supply a comparable amount.</p>
+          <p>Each available Open-Meteo model is compared with the closest AWC METAR observation. Recent observations receive more influence, outlying errors are constrained, and each continuous parameter is weighted by recent local skill. Bias corrections are strongest near the latest METAR and decay with forecast lead time, avoiding an over-correction far into the future. Skill weights also adapt cautiously to rainy/dry, day/night and light-wind/breezy regimes, while shrinking back toward all-weather skill when recent METAR matches are few. Wind is bias-corrected as east–west and north–south vector components before being converted back to aviation wind direction and speed; light-wind directions receive less influence because they are inherently variable. Rain/precipitation, thunderstorm, and fog/low-visibility signals are separately verified against the previous 72 hours of raw METAR and blended as skill-weighted event likelihoods. METAR variable winds are filled from the last actual direction or circularly interpolated between surrounding actual reports. Precipitation amount remains uncorrected because METAR does not supply a comparable amount.</p>
       </section>
 
       <section id="developerNote" class="developer-note" aria-label="Developer's Note">
@@ -156,7 +157,7 @@
       </section>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260909"></script>
-    <script src="bulk-risk.js?v=20260909"></script>
+    <script src="app.js?v=20260917"></script>
+    <script src="bulk-risk.js?v=20260917"></script>
   </body>
 </html>
