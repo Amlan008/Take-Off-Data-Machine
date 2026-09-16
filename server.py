@@ -41,8 +41,44 @@ ICAO_AIRPORTS = {
 }
 
 class AppHandler(SimpleHTTPRequestHandler):
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path == '/api/verification/snapshot':
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if length <= 0 or length > 2_500_000:
+                    return self.respond_error('Verification snapshot must be between 1 byte and 2.5 MB.', 400)
+                payload = json.loads(self.rfile.read(length).decode('utf-8'))
+                airport = str(payload.get('airport_icao', '')).upper()
+                if not re.fullmatch(r'[A-Z]{4}', airport):
+                    return self.respond_error('Provide a four-letter airport ICAO identifier.', 400)
+                if not self.verification_enabled():
+                    return self.respond_json({'enabled': False, 'saved': False})
+                # Table creation is idempotent and keeps first deployment
+                # simple: no manual D1 console SQL is required.
+                self.verification_call('/v1/schema', {})
+                records = payload.get('records', [])
+                observations = payload.get('observations', [])
+                self.verification_batches('/v1/forecast-records', 'records', records)
+                self.verification_batches('/v1/metar-observations', 'observations', observations)
+                return self.respond_json({'enabled': True, 'saved': True, 'records': len(records), 'observations': len(observations)})
+            except Exception as exc:
+                return self.respond_error(f'Unable to save verification data: {exc}', 502)
+        return self.respond_error('Unknown API route.', 404)
+
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == '/api/verification/skills':
+            airport = parse_qs(parsed.query).get('icao', [''])[0].upper()
+            if not re.fullmatch(r'[A-Z]{4}', airport):
+                return self.respond_error('Provide a four-letter airport ICAO identifier.', 400)
+            if not self.verification_enabled():
+                return self.respond_json({'enabled': False, 'skills': []})
+            try:
+                result = self.verification_call(f'/v1/skill?{urlencode({"airport": airport})}', None, method='GET')
+                return self.respond_json({'enabled': True, **result})
+            except Exception as exc:
+                return self.respond_json({'enabled': True, 'skills': [], 'warning': f'Persistent verification is temporarily unavailable: {exc}'})
         if parsed.path == '/api/metar':
             icao = parse_qs(parsed.query).get('icao', [''])[0].upper()
             if len(icao) != 4 or not icao.isalpha():
@@ -222,6 +258,39 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def fetch_json(self, url):
         return json.loads(self.fetch_body(url).decode('utf-8'))
+
+    def verification_enabled(self):
+        return bool(os.environ.get('VERIFICATION_WORKER_URL', '').strip() and os.environ.get('VERIFICATION_SECRET', '').strip())
+
+    def verification_call(self, path, payload=None, method='POST'):
+        base = os.environ['VERIFICATION_WORKER_URL'].strip().rstrip('/')
+        if not base.startswith('https://'):
+            raise ValueError('VERIFICATION_WORKER_URL must be an HTTPS Worker URL.')
+        body = json.dumps(payload).encode('utf-8') if payload is not None else None
+        request = Request(
+            base + path,
+            data=body,
+            method=method,
+            headers={
+                'Authorization': f"Bearer {os.environ['VERIFICATION_SECRET'].strip()}",
+                'Content-Type': 'application/json',
+                'User-Agent': 'WeatherMachineVerification/1.0',
+            },
+        )
+        with urlopen(request, timeout=30) as response:
+            decoded = response.read().decode('utf-8')
+        result = json.loads(decoded or '{}')
+        if not result.get('ok', False):
+            raise ValueError(result.get('error', 'Worker rejected the request.'))
+        return result
+
+    def verification_batches(self, path, key, rows):
+        if not isinstance(rows, list):
+            return
+        # Worker batches are deliberately limited. Chunking protects the
+        # service even when a long forecast window includes many models.
+        for index in range(0, len(rows), 200):
+            self.verification_call(path, {key: rows[index:index + 200]})
 
     def kmz_to_geojson(self, body):
         with ZipFile(BytesIO(body)) as archive:

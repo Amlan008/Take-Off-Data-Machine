@@ -267,7 +267,7 @@ function weightedMode(values,weights=values.map(()=>1)){ const totals=new Map();
 function recentWeightedMean(items){ const usable=items.filter(x=>Number.isFinite(x.value)); if(!usable.length) return 0; const weights=usable.map(x=>Math.exp(-Math.max(0,x.ageHours)/18)*(x.persistentWeight??1)); return usable.reduce((s,x,i)=>s+x.value*weights[i],0)/weights.reduce((a,b)=>a+b,0); }
 function recentRobustMean(items){ const usable=items.filter(x=>Number.isFinite(x.value)); if(!usable.length) return 0; const centre=[...usable].sort((a,b)=>a.value-b.value)[Math.floor(usable.length/2)].value; const deviations=usable.map(x=>Math.abs(x.value-centre)).sort((a,b)=>a-b); const limit=Math.max(deviations[Math.floor(deviations.length/2)]*3, .1); return recentWeightedMean(usable.map(x=>({...x,value:centre+Math.max(-limit,Math.min(limit,x.value-centre))}))); }
 function modelSkillError(model,key,regime){
-  const globalMae=key==='direction'&&Number.isFinite(model.bias.mae.windU)&&Number.isFinite(model.bias.mae.windV)?Math.hypot(model.bias.mae.windU,model.bias.mae.windV):model.bias.mae[key];
+  const globalMae=key==='direction'&&Number.isFinite(model.persistentDirectionMae)?model.persistentDirectionMae:key==='direction'&&Number.isFinite(model.bias.mae.windU)&&Number.isFinite(model.bias.mae.windV)?Math.hypot(model.bias.mae.windU,model.bias.mae.windV):model.bias.mae[key];
   if(!regime) return globalMae;
   const local=model.bias.regimes?.[regime];
   const localMae=key==='direction'&&Number.isFinite(local?.windU?.mae)&&Number.isFinite(local?.windV?.mae)?Math.hypot(local.windU.mae,local.windV.mae):local?.[key]?.mae;
@@ -481,6 +481,46 @@ function calculateWindComponents(){
   $('windCalculatorResult').innerHTML=`<p class="calculator-time"><strong>${fmt(time)}</strong> · Runway ${runway.id} (${Math.round(runway.heading).toString().padStart(3,'0')}° true)</p><div class="table-wrap"><table><thead><tr><th>Source</th><th>Wind</th><th>Headwind / tailwind</th><th>Crosswind</th></tr></thead><tbody><tr><td>Corrected model ensemble</td><td>${formatDirection(modelWind.direction)} / ${modelWind.speed.toFixed(1)} kt</td><td>${modelLabels.longitudinal}</td><td>${modelLabels.lateral}</td></tr><tr><td>TAF${taf?.tafState==='becmg-transition'?' · BECMG target':''}</td><td>${tafWind}</td><td>${tafLabels.longitudinal}</td><td>${tafLabels.lateral}</td></tr></tbody></table></div>${tafNote?`<p class="runway-note">${tafNote}</p>`:''}`;
 }
 
+function verificationNumber(value){return Number.isFinite(value)?value:null;}
+function persistentSkillMap(data){return new Map((data?.skills||[]).filter(item=>item&&item.model_id).map(item=>[item.model_id,item]));}
+function applyPersistentSkill(models,data){
+  const skills=persistentSkillMap(data);
+  models.forEach(model=>{
+    const skill=skills.get(model.id);
+    if(!skill||skill.samples<8) return;
+    const blend=(current,persistent)=>Number.isFinite(persistent)?(Number.isFinite(current)?.6*current+.4*persistent:persistent):current;
+    model.bias.mae.temp=blend(model.bias.mae.temp,skill.temperature_mae);
+    model.bias.mae.speed=blend(model.bias.mae.speed,skill.wind_speed_mae);
+    // Persistent direction error is kept separately because the active
+    // u/v correction remains the physically appropriate direction method.
+    model.persistentDirectionMae=blend(model.bias.mae.direction,skill.wind_direction_mae);
+    model.persistentSkillSamples=skill.samples;
+  });
+}
+async function loadPersistentSkill(icao){
+  const response=await fetch(`/api/verification/skills?icao=${encodeURIComponent(icao)}`);
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error||'Persistent skill lookup failed.');
+  return data;
+}
+function saveVerificationSnapshot(icao,issuedAt,models,observations){
+  const records=models.flatMap(model=>(model.corrected||[]).map(point=>({
+    airport_icao:icao,model_id:model.id,issued_at:issuedAt.toISOString(),valid_at:point.time.toISOString(),
+    lead_hours:(point.time-issuedAt)/36e5,temperature_c:verificationNumber(point.temperature_2m),
+    wind_speed_kt:verificationNumber(point.wind_speed_10m),wind_direction_deg:verificationNumber(point.wind_direction_10m),
+    precipitation_mm:verificationNumber(point.precipitation),weather_code:verificationNumber(point.weather_code)
+  }))).filter(row=>row.lead_hours>=0&&row.lead_hours<=120);
+  const metars=observations.filter(item=>item.time instanceof Date&&!Number.isNaN(item.time)).map(item=>({
+    airport_icao:icao,observed_at:item.time.toISOString(),temperature_c:verificationNumber(item.temp),
+    wind_speed_kt:verificationNumber(item.speed),wind_direction_deg:verificationNumber(item.direction),
+    visibility_m:verificationNumber(item.visibilityMetres),weather_code:null,raw_metar:item.raw||null
+  }));
+  fetch('/api/verification/snapshot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({airport_icao:icao,records,observations:metars})})
+    .then(response=>response.ok?response.json():Promise.reject(new Error(`HTTP ${response.status}`)))
+    .then(data=>{if(data.enabled&&data.saved) console.info(`Saved ${data.records} forecast and ${data.observations} METAR verification records.`);})
+    .catch(error=>console.warn('Persistent verification snapshot was not saved.',error));
+}
+
 async function generate(){
   const icao=$('icao').value.trim().toUpperCase(); const inputStart=toUtc($('start').value), inputEnd=toUtc($('end').value); if(!/^[A-Z]{4}$/.test(icao)) return notice('Please enter a four-letter ICAO code (for example, KJFK or EGLL).','error'); if(!Number.isFinite(inputStart.getTime())||!Number.isFinite(inputEnd.getTime())||inputEnd<=inputStart) return notice('Choose a valid UTC take-off window where the end is after the start.','error');
   // Keep every output on fixed clock half-hours. A non-half-hour start is
@@ -511,10 +551,13 @@ async function generate(){
     const ensembleModels=ensembleRequests.filter(result=>result.status==='fulfilled'&&result.value).map(result=>result.value);
     ensembleRequests.forEach((result,index)=>{if(result.status==='rejected') console.warn(`${ensembleSources[index].name} unavailable`,result.reason);});
     models.push(...ensembleModels);
-    if(!models.length) throw new Error('The requested time window is unavailable from the returned models.'); assignAdaptiveWeights(models);
+    if(!models.length) throw new Error('The requested time window is unavailable from the returned models.');
+    const persistentSkill=await loadPersistentSkill(icao).catch(error=>{console.warn('Persistent model skill unavailable',error);return null;});
+    applyPersistentSkill(models,persistentSkill);
+    assignAdaptiveWeights(models);
     const transientObservation=latestTransientObservation(observations);
     const nowcast=nowcastTemperatureAdjustment(halfHourly(models,start,end,transientObservation),usable,observations); if(!nowcast.rows.length) throw new Error('The requested UTC window is outside the available forecast range.');
-    state={models,observations,taf,runways,runwayIndex:0,ensemble:nowcast.rows,selected:start,chart:null,meteograms:[],parameter:'temp',airport:icao,chartMarkers:[],showModelForecasts:true,chartTooltips:true}; sessionStorage.setItem('weatherMachineModelResources',JSON.stringify({airport:icao,models:models.map(model=>({id:model.id,name:model.name,bias:model.bias})),ensemble:nowcast.rows})); render(observations.length,location.name,models.length); notice(`Ready. ${models.length} model sources contributed to the corrected ensemble.${nowcast.applied?' A short-lived rain-cooling adjustment is active.':''}`,'');
+    state={models,observations,taf,runways,runwayIndex:0,ensemble:nowcast.rows,selected:start,chart:null,meteograms:[],parameter:'temp',airport:icao,chartMarkers:[],showModelForecasts:true,chartTooltips:true}; sessionStorage.setItem('weatherMachineModelResources',JSON.stringify({airport:icao,models:models.map(model=>({id:model.id,name:model.name,bias:model.bias,persistentSkillSamples:model.persistentSkillSamples||0})),ensemble:nowcast.rows})); render(observations.length,location.name,models.length); saveVerificationSnapshot(icao,new Date(),models,observations); notice(`Ready. ${models.length} model sources contributed to the corrected ensemble.${nowcast.applied?' A short-lived rain-cooling adjustment is active.':''}`,'');
   }catch(error){ console.error(error); notice(error.message || 'Unable to generate data. Please try again.','error'); } finally {$('generate').disabled=false;}
 }
 const LEAD_TIME_WINDOWS=[
