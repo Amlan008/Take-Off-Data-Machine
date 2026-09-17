@@ -166,6 +166,24 @@ function weatherCodeEvents(code){
   if(!Number.isFinite(code)) return null;
   return {precip:[51,53,55,56,57,61,63,65,66,67,71,73,75,77,80,81,82,85,86,95,96,99].includes(code),thunder:[95,96,99].includes(code),fogLowVis:[45,48].includes(code)};
 }
+function weatherInterpretation(code, precipitation=0, isDay=1){
+  const value=Number.isFinite(code)?Math.round(code):null;
+  const lookup={
+    0:['☀️','Clear sky','None'],1:['🌤️','Mainly clear','None'],2:['⛅','Partly cloudy','None'],3:['☁️','Overcast','None'],
+    45:['🌫️','Fog','None'],48:['🌫️','Depositing rime fog','None'],
+    51:['🌦️','Light drizzle','Drizzle'],53:['🌦️','Moderate drizzle','Drizzle'],55:['🌧️','Dense drizzle','Drizzle'],
+    56:['🧊','Light freezing drizzle','Freezing drizzle'],57:['🧊','Dense freezing drizzle','Freezing drizzle'],
+    61:['🌦️','Slight rain','Rain'],63:['🌧️','Moderate rain','Rain'],65:['🌧️','Heavy rain','Rain'],
+    66:['🧊🌧️','Light freezing rain','Freezing rain'],67:['🧊🌧️','Heavy freezing rain','Freezing rain'],
+    71:['🌨️','Slight snowfall','Snow'],73:['❄️','Moderate snowfall','Snow'],75:['❄️','Heavy snowfall','Snow'],77:['🌨️','Snow grains','Snow grains'],
+    80:['🌦️','Slight rain showers','Rain showers'],81:['🌧️','Moderate rain showers','Rain showers'],82:['🌧️','Violent rain showers','Rain showers'],
+    85:['🌨️','Slight snow showers','Snow showers'],86:['❄️','Heavy snow showers','Snow showers'],
+    95:['⛈️','Thunderstorm','Thunderstorm'],96:['⛈️🧊','Thunderstorm with slight hail','Thunderstorm / hail'],99:['⛈️🧊','Thunderstorm with heavy hail','Thunderstorm / hail']
+  };
+  if(lookup[value]){const [symbol,description,precipitationType]=lookup[value];return {code:value,symbol:value===0&&isDay===0?'🌙':symbol,description,precipitationType};}
+  if(Number(precipitation)>0) return {code:value,symbol:'🌧️',description:'Precipitation signal',precipitationType:'Type not specified'};
+  return {code:value,symbol:'—',description:value===null?'Weather code unavailable':`Unrecognised WMO weather code ${value}`,precipitationType:'None'};
+}
 function nearestMetar(observations, date, maximumAgeMs=90*60e3){ const nearest=observations.reduce((best,o)=>!best || Math.abs(o.time-date)<Math.abs(best.time-date)?o:best,null); return nearest&&Math.abs(nearest.time-date)<=maximumAgeMs?nearest:null; }
 function resolveVariableWinds(observations){
   // AWC represents VRB wind as a non-numeric wdir. Reconstruct only its direction;
@@ -296,15 +314,15 @@ function regimeWeight(model,key,point){
   const base=model.weights?.[key]??0, local=forecastRegimes(point).map(regime=>model.regimeWeights?.[regime]?.[key]).filter(Number.isFinite);
   // Each applicable regime can refine the weight, while the all-weather score
   // remains a stabilising prior whenever the recent sample is sparse.
-  return local.length?.35*base+.65*mean(local):base;
+  return (local.length ? .35*base+.65*mean(local) : base)*persistentFactor(model,key,point);
 }
 function correct(model, correctionOrigin=Number.NaN){
   const b=model.bias, add=(value,offset)=>Number.isFinite(value)?value+offset:Number.NaN;
   const leadDecay=point=>Number.isFinite(correctionOrigin)?Math.pow(.5,Math.max(0,point.time.getTime()-correctionOrigin)/(15*36e5)):1;
   const regimeOffset=(key,point)=>{
     const candidates=forecastRegimes(point).map(label=>b.regimes?.[label]?.[key]).filter(item=>item?.matches>=4&&Number.isFinite(item.value)).map(item=>item.value);
-    const localOffset=candidates.length?.55*b[key]+.45*mean(candidates):b[key];
-    return (Number.isFinite(localOffset)?localOffset:0)*leadDecay(point);
+    const localOffset=candidates.length ? .55*b[key]+.45*mean(candidates) : b[key];
+    return ((Number.isFinite(localOffset)?localOffset:0)+persistentBias(model,key,point,correctionOrigin))*leadDecay(point);
   };
   const correctedVisibility=point=>{if(!Number.isFinite(point.visibility)) return Number.NaN;const logOffset=Math.max(-Math.log(2),Math.min(Math.log(2),regimeOffset('visibility',point)||0));return Math.max(100,Math.min(100000,point.visibility*Math.exp(.65*logOffset)));};
   return {...model, corrected:model.points.map(point=>{const rawWind=windToUV(point.wind_direction_10m,point.wind_speed_10m), correctedWind=windFromUV(add(rawWind.u,regimeOffset('windU',point)),add(rawWind.v,regimeOffset('windV',point)));return {...point,temperature_2m:add(point.temperature_2m,regimeOffset('temp',point)),wind_direction_10m:correctedWind.direction,wind_speed_10m:correctedWind.speed,wind_u:correctedWind.u,wind_v:correctedWind.v,pressure_msl:add(point.pressure_msl,regimeOffset('pressure',point)),visibility:correctedVisibility(point)};})};
@@ -319,11 +337,11 @@ function halfHourly(models,start,end,transientObservation=null){
     const date=new Date(time), paired=models.map(model=>({model,point:interpolate(model.corrected,date)})).filter(item=>item.point);
     if(!paired.length) continue;
     const blend=(weightKey,pointKey,weights=null)=>weightedMean(paired.map(item=>item.point[pointKey]),weights||paired.map(item=>regimeWeight(item.model,weightKey,item.point)));
-    const eventProbability=event=>100*weightedMean(paired.map(item=>{const events=weatherCodeEvents(item.point.weather_code);return events?Number(events[event]):Number.NaN;}),paired.map(item=>item.model.eventWeights?.[event]??item.model.weights.precip));
+    const eventProbability=event=>100*weightedMean(paired.map(item=>{const events=weatherCodeEvents(item.point.weather_code);return events?Number(events[event]):Number.NaN;}),paired.map(item=>(item.model.eventWeights?.[event]??item.model.weights.precip)*persistentFactor(item.model,event,item.point,true)));
     const transientLead=transientObservation?(date-transientObservation.time)/36e5:Infinity;
     const wetTransition=transientLead>=0&&transientLead<=5;
     const temperatureWeights=paired.map(item=>regimeWeight(item.model,'temp',item.point)*(wetTransition?(item.point.precipitation>=.1?1.55:item.point.precipitation>0?1.15:.55):1));
-    const precipWeights=paired.map(item=>item.model.eventWeights?.precip??item.model.weights.precip);
+    const precipWeights=paired.map(item=>(item.model.eventWeights?.precip??item.model.weights.precip)*persistentFactor(item.model,'precip',item.point,true));
     const values=key=>paired.map(item=>item.point[key]).filter(Number.isFinite);
     const percentile=(key,probability)=>{const value=values(key).sort((a,b)=>a-b);return value.length?value[Math.round((value.length-1)*probability)]:Number.NaN;};
     const tempRange=percentile('temperature_2m',.9)-percentile('temperature_2m',.1);
@@ -337,8 +355,8 @@ function halfHourly(models,start,end,transientObservation=null){
     const convectiveRisk=thunderProbability>=50||(cape>=1000&&eventProbability('precip')>=40)?'High':thunderProbability>=20||(cape>=500&&eventProbability('precip')>=25)?'Moderate':'Low';
     rows.push({
       time:date,temp:blend('temp','temperature_2m',temperatureWeights),direction:ensembleWind.direction,speed:ensembleWind.speed,
-      gust:blend('speed','wind_gusts_10m'),pressure:blend('pressure','pressure_msl'),precip:blend('precip','precipitation')*(date.getUTCMinutes()===30?.5:1),
-      precipProbability:eventProbability('precip'),thunderProbability,fogLowVisProbability:eventProbability('fogLowVis'),weatherCode:weightedMode(paired.map(item=>item.point.weather_code),precipWeights),
+      gust:blend('speed','wind_gusts_10m'),pressure:blend('pressure','pressure_msl'),precip:blend('precip','precipitation')*(date.getUTCMinutes()===30 ? .5 : 1),
+      precipProbability:eventProbability('precip'),thunderProbability,fogLowVisProbability:eventProbability('fogLowVis'),weatherCode:weightedMode(paired.map(item=>item.point.weather_code),precipWeights),isDay:weightedMode(paired.map(item=>item.point.is_day)),
       cloudTotal:blend('precip','cloud_cover'),cloudLow:blend('precip','cloud_cover_low'),cloudMid:blend('precip','cloud_cover_mid'),cloudHigh:blend('precip','cloud_cover_high'),
       visibility:blend('visibility','visibility'),cloudBase:blend('precip','cloud_base'),freezingLevel:blend('precip','freezing_level_height'),cape,cin:blend('precip','convective_inhibition'),convectiveRisk,
       tempP10:percentile('temperature_2m',.1),tempP90:percentile('temperature_2m',.9),speedP10:percentile('wind_speed_10m',.1),speedP90:percentile('wind_speed_10m',.9),pressureP10:percentile('pressure_msl',.1),pressureP90:percentile('pressure_msl',.9),confidence
@@ -483,18 +501,45 @@ function calculateWindComponents(){
 
 function verificationNumber(value){return Number.isFinite(value)?value:null;}
 function persistentSkillMap(data){return new Map((data?.skills||[]).filter(item=>item&&item.model_id).map(item=>[item.model_id,item]));}
+function verificationLeadBand(hours){return hours<3?'0-3':hours<6?'3-6':hours<9?'6-9':hours<12?'9-12':hours<18?'12-18':hours<24?'18-24':hours<36?'24-36':hours<48?'36-48':hours<72?'48-72':'72+';}
+function persistentSummary(model,point){
+  const skill=model.persistentSkill;
+  if(!skill) return null;
+  const origin=model.correctionOrigin||Date.now(), hours=Math.max(0,(point.time.getTime()-origin)/36e5);
+  const candidate=skill.lead_bands?.[verificationLeadBand(hours)];
+  // A lead-time score with too few matched forecasts is deliberately ignored.
+  return candidate?.samples>=12?candidate:(skill.overall?.samples>=12?skill.overall:null);
+}
+function persistentFactor(model,key,point,event=false){
+  const skill=persistentSummary(model,point); if(!skill) return 1;
+  const metricKey=event?({fogLowVis:'fog_low_vis'}[key]||key):({temp:'temperature',speed:'wind_speed',direction:'wind_direction',visibility:'visibility',cloudBase:'cloud_base'}[key]||key);
+  const name=event?`${metricKey}_brier`:`${metricKey}_mae`, samples=skill[`${metricKey}_samples`];
+  const persistent=skill[name], local=event?model.eventSkill?.[key]?.brier:model.bias.mae[key];
+  if(!Number.isFinite(persistent)||samples<12) return 1;
+  // Limit the historical influence. Fresh 72-hour local skill remains the
+  // primary signal; D1 only nudges it toward a proven lead-time tendency.
+  const ratio=Number.isFinite(local)&&local>0?Math.pow(local/Math.max(persistent,.02),.45):1;
+  return Math.max(.72,Math.min(1.38,ratio));
+}
+function persistentBias(model,key,point,origin){
+  const skill=persistentSummary(model,point);
+  // Direction is corrected as vector components, so a scalar wind-speed bias
+  // cannot safely be applied to either component.
+  const metricKey={temp:'temperature',visibility:'visibility'}[key];
+  if(!metricKey) return 0;
+  const historical=skill?.[`${metricKey}_bias`], samples=skill?.[`${metricKey}_samples`]||0;
+  if(!Number.isFinite(historical)||samples<12) return 0;
+  const trust=Math.min(.35,samples/(samples+30)*.5);
+  return historical*trust;
+}
 function applyPersistentSkill(models,data){
   const skills=persistentSkillMap(data);
   models.forEach(model=>{
     const skill=skills.get(model.id);
-    if(!skill||skill.samples<8) return;
-    const blend=(current,persistent)=>Number.isFinite(persistent)?(Number.isFinite(current)?.6*current+.4*persistent:persistent):current;
-    model.bias.mae.temp=blend(model.bias.mae.temp,skill.temperature_mae);
-    model.bias.mae.speed=blend(model.bias.mae.speed,skill.wind_speed_mae);
-    // Persistent direction error is kept separately because the active
-    // u/v correction remains the physically appropriate direction method.
-    model.persistentDirectionMae=blend(model.bias.mae.direction,skill.wind_direction_mae);
-    model.persistentSkillSamples=skill.samples;
+    const samples=skill?.overall?.samples??skill?.samples??0;
+    if(!skill||samples<12) return;
+    model.persistentSkill=skill;
+    model.persistentSkillSamples=samples;
   });
 }
 async function loadPersistentSkill(icao){
@@ -508,12 +553,13 @@ function saveVerificationSnapshot(icao,issuedAt,models,observations){
     airport_icao:icao,model_id:model.id,issued_at:issuedAt.toISOString(),valid_at:point.time.toISOString(),
     lead_hours:(point.time-issuedAt)/36e5,temperature_c:verificationNumber(point.temperature_2m),
     wind_speed_kt:verificationNumber(point.wind_speed_10m),wind_direction_deg:verificationNumber(point.wind_direction_10m),
-    precipitation_mm:verificationNumber(point.precipitation),weather_code:verificationNumber(point.weather_code)
+    precipitation_mm:verificationNumber(point.precipitation),weather_code:verificationNumber(point.weather_code),visibility_m:verificationNumber(point.visibility),cloud_base_m:verificationNumber(point.cloud_base)
   }))).filter(row=>row.lead_hours>=0&&row.lead_hours<=120);
   const metars=observations.filter(item=>item.time instanceof Date&&!Number.isNaN(item.time)).map(item=>({
     airport_icao:icao,observed_at:item.time.toISOString(),temperature_c:verificationNumber(item.temp),
     wind_speed_kt:verificationNumber(item.speed),wind_direction_deg:verificationNumber(item.direction),
-    visibility_m:verificationNumber(item.visibilityMetres),weather_code:null,raw_metar:item.raw||null
+    visibility_m:verificationNumber(item.visibilityMetres),weather_code:null,ceiling_m:verificationNumber(item.ceilingFt/3.28084),
+    event_precip:item.eventPrecip?1:0,event_thunder:item.eventThunder?1:0,event_fog_low_vis:item.eventFogLowVis?1:0,raw_metar:item.raw||null
   }));
   fetch('/api/verification/snapshot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({airport_icao:icao,records,observations:metars})})
     .then(response=>response.ok?response.json():Promise.reject(new Error(`HTTP ${response.status}`)))
@@ -553,11 +599,16 @@ async function generate(){
     models.push(...ensembleModels);
     if(!models.length) throw new Error('The requested time window is unavailable from the returned models.');
     const persistentSkill=await loadPersistentSkill(icao).catch(error=>{console.warn('Persistent model skill unavailable',error);return null;});
+    models.forEach(model=>{model.correctionOrigin=correctionOrigin;});
     applyPersistentSkill(models,persistentSkill);
+    // Re-run correction after D1 skill arrives so its airport-specific,
+    // lead-time-aware bias is included as a restrained refinement.
+    models.forEach(model=>Object.assign(model,correct(model,correctionOrigin)));
     assignAdaptiveWeights(models);
     const transientObservation=latestTransientObservation(observations);
     const nowcast=nowcastTemperatureAdjustment(halfHourly(models,start,end,transientObservation),usable,observations); if(!nowcast.rows.length) throw new Error('The requested UTC window is outside the available forecast range.');
-    state={models,observations,taf,runways,runwayIndex:0,ensemble:nowcast.rows,selected:start,chart:null,meteograms:[],parameter:'temp',airport:icao,chartMarkers:[],showModelForecasts:true,chartTooltips:true}; sessionStorage.setItem('weatherMachineModelResources',JSON.stringify({airport:icao,models:models.map(model=>({id:model.id,name:model.name,bias:model.bias,persistentSkillSamples:model.persistentSkillSamples||0})),ensemble:nowcast.rows})); render(observations.length,location.name,models.length); saveVerificationSnapshot(icao,new Date(),models,observations); notice(`Ready. ${models.length} model sources contributed to the corrected ensemble.${nowcast.applied?' A short-lived rain-cooling adjustment is active.':''}`,'');
+    const persistentModels=models.filter(model=>model.persistentSkillSamples>=12).length;
+    state={models,observations,taf,runways,runwayIndex:0,ensemble:nowcast.rows,selected:start,chart:null,meteograms:[],parameter:'temp',airport:icao,chartMarkers:[],showModelForecasts:true,chartTooltips:true}; sessionStorage.setItem('weatherMachineModelResources',JSON.stringify({airport:icao,models:models.map(model=>({id:model.id,name:model.name,bias:model.bias,persistentSkillSamples:model.persistentSkillSamples||0})),ensemble:nowcast.rows})); render(observations.length,location.name,models.length); saveVerificationSnapshot(icao,new Date(),models,observations); notice(`Ready. ${models.length} model sources contributed to the corrected ensemble.${persistentModels?` Long-run airport skill is active for ${persistentModels} source${persistentModels===1?'':'s'}.`:' Verification history is being collected.'}${nowcast.applied?' A short-lived rain-cooling adjustment is active.':''}`,'');
   }catch(error){ console.error(error); notice(error.message || 'Unable to generate data. Please try again.','error'); } finally {$('generate').disabled=false;}
 }
 const LEAD_TIME_WINDOWS=[
@@ -643,7 +694,7 @@ function renderConfidenceAssessment(){
 }
 function render(metarCount, airportName, modelCount){
   $('airportName').textContent=`${state.airport} · ${airportName}`; $('modelCount').textContent=modelCount; $('metarCount').textContent=metarCount; $('forecastConfidence').textContent=state.ensemble.filter(row=>row.confidence==='High').length/state.ensemble.length>=.6?'High':state.ensemble.filter(row=>row.confidence==='Low').length/state.ensemble.length>=.4?'Low':'Moderate'; $('summary').classList.remove('hidden'); renderBriefing(); $('results').classList.remove('hidden'); renderWindCalculator(); renderConfidenceAssessment(); $('metarDetail').classList.remove('hidden'); $('detail').classList.remove('hidden');
-  $('tableBody').innerHTML=state.ensemble.map((r,i)=>`<tr data-index="${i}" class="${i===0?'selected':''}"><td>${fmt(r.time)}</td><td>${formatValue(r.temp)}</td><td>${Number.isFinite(r.direction)?Math.round(r.direction).toString().padStart(3,'0'):'—'}</td><td>${formatValue(r.speed)}</td><td>${formatValue(r.gust)}</td><td>${formatValue(r.pressure)}</td><td class="precip-cell ${precipStyle(r.precip).className}" title="${precipStyle(r.precip).label}">${formatValue(r.precip,2)}</td><td>${formatValue(r.precipProbability,0)}</td><td>${formatValue(r.thunderProbability,0)}</td><td>${formatValue(r.fogLowVisProbability,0)}</td><td>${formatValue(r.weatherCode,0)}</td><td>${formatValue(r.cloudTotal,0)}</td><td>${formatValue(r.cloudLow,0)}</td><td>${formatValue(r.cloudMid,0)}</td><td>${formatValue(r.cloudHigh,0)}</td><td>${r.confidence}</td></tr>`).join('');
+  $('tableBody').innerHTML=state.ensemble.map((r,i)=>{const weather=weatherInterpretation(r.weatherCode,r.precip,r.isDay);return `<tr data-index="${i}" class="${i===0?'selected':''}"><td>${fmt(r.time)}</td><td>${formatValue(r.temp)}</td><td>${Number.isFinite(r.direction)?Math.round(r.direction).toString().padStart(3,'0'):'—'}</td><td>${formatValue(r.speed)}</td><td>${formatValue(r.gust)}</td><td>${formatValue(r.pressure)}</td><td class="precip-cell ${precipStyle(r.precip).className}" title="${precipStyle(r.precip).label}">${formatValue(r.precip,2)}</td><td class="precip-type">${weather.precipitationType}</td><td>${formatValue(r.precipProbability,0)}</td><td>${formatValue(r.thunderProbability,0)}</td><td>${formatValue(r.fogLowVisProbability,0)}</td><td class="weather-cell"><span class="weather-symbol" aria-hidden="true">${weather.symbol}</span>${weather.description}<small>WMO ${weather.code??'—'}</small></td><td>${formatValue(r.cloudTotal,0)}</td><td>${formatValue(r.cloudLow,0)}</td><td>${formatValue(r.cloudMid,0)}</td><td>${formatValue(r.cloudHigh,0)}</td><td>${r.confidence}</td></tr>`;}).join('');
   $('tableBody').querySelectorAll('tr').forEach(row=>row.addEventListener('click',()=>{state.selected=state.ensemble[Number(row.dataset.index)].time; $('tableBody').querySelectorAll('tr').forEach(x=>x.classList.remove('selected'));row.classList.add('selected'); drawChart();}));
   const recentMetars=state.observations.filter(o=>o.time>=Date.now()-24*3600e3).sort((a,b)=>b.time-a.time);
   const escapeHtml=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -735,7 +786,7 @@ function drawChart(){
     datasets.push({label:'Corrected ensemble',type:isPrecip?'bar':'line',data:ensembleData,yAxisID:isPrecip?'yAmount':undefined,borderColor:'#17493a',borderWidth:isPrecip?0:3,backgroundColor:isPrecip?ensembleData.map(p=>precipStyle(p.y).color):'#17493a',pointRadius:0,tension:.18});
     if(isPrecip) datasets.push({label:'Precipitation probability',type:'line',data:ensembleSeries('precipProbability'),yAxisID:'yProbability',borderColor:'#4f7ebc',backgroundColor:'#4f7ebc',borderWidth:2.2,pointRadius:2,pointHoverRadius:4,tension:.18});
   }
-  const windBarbPlugin={id:'windBarbs',afterDatasetsDraw(chart){ if(!isWind) return; const {ctx}=chart; chart.data.datasets.forEach((set,index)=>{ if(!set.windBarbs) return; const meta=chart.getDatasetMeta(index); meta.data.forEach((element,pointIndex)=>{const point=set.data[pointIndex], direction=point?.y, speed=point?.speed;if(!Number.isFinite(direction)||!Number.isFinite(speed)) return; const lineWidth=set.label.startsWith('Corrected')?.95:.55; let remaining=Math.max(0,Math.round(speed/5)*5); ctx.save();ctx.translate(element.x,element.y); // A meteorological barb shaft points toward the direction the wind comes FROM.
+  const windBarbPlugin={id:'windBarbs',afterDatasetsDraw(chart){ if(!isWind) return; const {ctx}=chart; chart.data.datasets.forEach((set,index)=>{ if(!set.windBarbs) return; const meta=chart.getDatasetMeta(index); meta.data.forEach((element,pointIndex)=>{const point=set.data[pointIndex], direction=point?.y, speed=point?.speed;if(!Number.isFinite(direction)||!Number.isFinite(speed)) return; const lineWidth=set.label.startsWith('Corrected') ? .95 : .55; let remaining=Math.max(0,Math.round(speed/5)*5); ctx.save();ctx.translate(element.x,element.y); // A meteorological barb shaft points toward the direction the wind comes FROM.
         ctx.rotate(direction*Math.PI/180);ctx.strokeStyle=set.barbColor;ctx.fillStyle=set.barbColor;ctx.lineWidth=lineWidth;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(0,3);ctx.lineTo(0,-10);ctx.stroke();let offset=-9;
         while(remaining>=50){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(4.5,offset+2.25);ctx.lineTo(0,offset+4);ctx.closePath();ctx.fill();remaining-=50;offset+=4;}
         while(remaining>=10){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(4.5,offset+2.25);ctx.stroke();remaining-=10;offset+=3;}
@@ -767,6 +818,13 @@ function drawChart(){
     rows.forEach((row,index)=>{if(index%step) return;ctx.fillText(`C ${formatValue(row.cloudTotal,0)}%`,x.getPixelForValue(row.time),x.bottom+7);});
     ctx.restore();
   }};
+  const weatherSymbolPlugin={id:'weatherSymbols',afterDatasetsDraw(chart){
+    if(!isPrecip) return;
+    const {ctx,chartArea}=chart,x=chart.scales.x,width=chartArea.right-chartArea.left,step=Math.max(1,Math.ceil(chartRows.length/Math.max(1,Math.floor(width/30))));
+    ctx.save();ctx.font='15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    chartRows.forEach((row,index)=>{if(index%step) return;const weather=weatherInterpretation(row.weatherCode,row.precip,row.isDay);ctx.fillText(weather.symbol,x.getPixelForValue(row.time),chartArea.top+20);});
+    ctx.restore();
+  }};
   const referenceLinePlugin={id:'referenceLines',afterDatasetsDraw(chart){
     const x=chart.scales.x, colors=['#e75e3f','#4f7ebc','#946600'];
     if(!x) return;
@@ -795,9 +853,9 @@ function drawChart(){
   if(state.chart) state.chart.destroy(); Chart.getChart($('chart'))?.destroy();
   const xAxis={type:'time',adapters:{date:{zone:'utc'}},min:from,max:to,time:{unit:'hour',stepSize:1,displayFormats:{hour:'HH:mm'}},title:{display:true,text:'Time (UTC)',font:{family:'DM Mono',size:10}},grid:{color:'#e5e9e4'},ticks:{autoSkip:false,maxTicksLimit:1000,maxRotation:0,minRotation:0,padding:4,font:{family:'DM Mono',size:9},callback:(value,index,ticks)=>{const time=new Date(Number(value)),previous=index?new Date(Number(ticks[index-1].value)):null,startsUtcDay=!previous||time.getUTCFullYear()!==previous.getUTCFullYear()||time.getUTCMonth()!==previous.getUTCMonth()||time.getUTCDate()!==previous.getUTCDate();return [fmtChartTimeUtc(time),startsUtcDay?fmtChartDateUtc(time):''];}}};
   const scales=isWind?{x:xAxis,yDirection:{position:'left',min:0,max:360,title:{display:true,text:'Wind direction (°)',font:{family:'DM Mono',size:10}},grid:{color:'#e5e9e4'},ticks:{font:{family:'DM Mono',size:10}}},ySpeed:{position:'right',beginAtZero:true,title:{display:true,text:'Wind speed (kt)',font:{family:'DM Mono',size:10}},grid:{drawOnChartArea:false},ticks:{font:{family:'DM Mono',size:10}}}}:isPrecip?{x:xAxis,yAmount:{position:'left',beginAtZero:true,title:{display:true,text:'mm / 30 min',font:{family:'DM Mono',size:10}},grid:{color:'#e5e9e4'},ticks:{font:{family:'DM Mono',size:10}}},yProbability:{position:'right',min:0,max:100,title:{display:true,text:'Probability (%)',font:{family:'DM Mono',size:10}},grid:{drawOnChartArea:false},ticks:{font:{family:'DM Mono',size:10},callback:value=>`${value}%`}}}:{x:xAxis,y:{title:{display:true,text:s.unit,font:{family:'DM Mono',size:10}},grid:{color:'#e5e9e4'},ticks:{font:{family:'DM Mono',size:10}}}};
-  state.chart=new Chart($('chart'),{type:'line',data:{datasets},plugins:[windBarbPlugin,cloudLayerPlugin,convectiveRiskBandPlugin,precipitationBandPlugin,referenceLinePlugin],options:{responsive:true,maintainAspectRatio:false,layout:{padding:{bottom:isPrecip?24:0}},interaction:{mode:'index',intersect:false},onClick:toggleReferenceLine,plugins:{legend:{position:isPrecip?'top':'bottom',labels:{boxWidth:14,font:{family:'DM Sans',size:11},usePointStyle:true,filter:item=>!item.text.startsWith('P10 ')&&!item.text.startsWith('P90 ')}},tooltip:{enabled:state.chartTooltips,filter:c=>!c.dataset.label.startsWith('Observed METAR'),callbacks:{title:items=>items.length?fmtChartUtc(new Date(items[0].parsed.x)):'',label:c=>{const unit=c.dataset.yAxisID==='yProbability'?'%':isWind?(c.dataset.yAxisID==='yDirection'?'°':'kt'):s.unit;return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(isWind&&c.dataset.yAxisID==='yDirection'?0:1)} ${unit}`;},afterBody:items=>isPrecip&&items.length?`Convective risk: ${chartRows.reduce((nearest,row)=>Math.abs(row.time-items[0].parsed.x)<Math.abs(nearest.time-items[0].parsed.x)?row:nearest,chartRows[0]).convectiveRisk}`:''}}},scales}});
+  state.chart=new Chart($('chart'),{type:'line',data:{datasets},plugins:[windBarbPlugin,cloudLayerPlugin,convectiveRiskBandPlugin,precipitationBandPlugin,weatherSymbolPlugin,referenceLinePlugin],options:{responsive:true,maintainAspectRatio:false,layout:{padding:{bottom:isPrecip?24:0}},interaction:{mode:'index',intersect:false},onClick:toggleReferenceLine,plugins:{legend:{position:isPrecip?'top':'bottom',labels:{boxWidth:14,font:{family:'DM Sans',size:11},usePointStyle:true,filter:item=>!item.text.startsWith('P10 ')&&!item.text.startsWith('P90 ')}},tooltip:{enabled:state.chartTooltips,filter:c=>!c.dataset.label.startsWith('Observed METAR'),callbacks:{title:items=>items.length?fmtChartUtc(new Date(items[0].parsed.x)):'',label:c=>{const unit=c.dataset.yAxisID==='yProbability'?'%':isWind?(c.dataset.yAxisID==='yDirection'?'°':'kt'):s.unit;return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(isWind&&c.dataset.yAxisID==='yDirection'?0:1)} ${unit}`;},afterBody:items=>{if(!isPrecip||!items.length) return '';const row=chartRows.reduce((nearest,current)=>Math.abs(current.time-items[0].parsed.x)<Math.abs(nearest.time-items[0].parsed.x)?current:nearest,chartRows[0]),weather=weatherInterpretation(row.weatherCode,row.precip,row.isDay);return [`Weather: ${weather.symbol} ${weather.description} (WMO ${weather.code??'—'})`,`Precipitation type: ${weather.precipitationType}`,`Convective risk: ${row.convectiveRisk}`];}}}},scales}});
 }
-function download(){ const header='Time (UTC),Temp (°C),Wind Direction (°),Wind Speed (kt),Wind Gust (kt),Mean Sea-Level Pressure (hPa),Precipitation (mm / 30 min),Precipitation Probability (%),Thunderstorm Probability (%),Fog / Low-Visibility Probability (%),Weather Code (WMO),Cloud Total (%),Cloud Low (%),Cloud Mid (%),Cloud High (%)'; const lines=state.ensemble.map(r=>[r.time.toISOString(),formatValue(r.temp),Number.isFinite(r.direction)?Math.round(r.direction):'',formatValue(r.speed),formatValue(r.gust),formatValue(r.pressure),formatValue(r.precip,2),formatValue(r.precipProbability,0),formatValue(r.thunderProbability,0),formatValue(r.fogLowVisProbability,0),formatValue(r.weatherCode,0),formatValue(r.cloudTotal,0),formatValue(r.cloudLow,0),formatValue(r.cloudMid,0),formatValue(r.cloudHigh,0)].join(',')); const blob=new Blob([[header,...lines].join('\n')],{type:'text/csv'}); const link=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${state.airport}-takeoff-ensemble.csv`});link.click();URL.revokeObjectURL(link.href); }
+function download(){ const header='Time (UTC),Temp (°C),Wind Direction (°),Wind Speed (kt),Wind Gust (kt),Mean Sea-Level Pressure (hPa),Precipitation (mm / 30 min),Precipitation Type,Precipitation Probability (%),Thunderstorm Probability (%),Fog / Low-Visibility Probability (%),Weather Interpretation,Weather Code (WMO),Cloud Total (%),Cloud Low (%),Cloud Mid (%),Cloud High (%)'; const lines=state.ensemble.map(r=>{const weather=weatherInterpretation(r.weatherCode,r.precip,r.isDay);return[r.time.toISOString(),formatValue(r.temp),Number.isFinite(r.direction)?Math.round(r.direction):'',formatValue(r.speed),formatValue(r.gust),formatValue(r.pressure),formatValue(r.precip,2),weather.precipitationType,formatValue(r.precipProbability,0),formatValue(r.thunderProbability,0),formatValue(r.fogLowVisProbability,0),weather.description,formatValue(r.weatherCode,0),formatValue(r.cloudTotal,0),formatValue(r.cloudLow,0),formatValue(r.cloudMid,0),formatValue(r.cloudHigh,0)].map(value=>`"${String(value).replaceAll('"','""')}"`).join(',');}); const blob=new Blob([[header,...lines].join('\n')],{type:'text/csv'}); const link=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${state.airport}-takeoff-ensemble.csv`});link.click();URL.revokeObjectURL(link.href); }
 function bindToggle(sectionId,buttonId,onExpand){ $(buttonId).onclick=()=>{const section=$(sectionId);section.classList.toggle('open');const expanded=section.classList.contains('open');$(buttonId).setAttribute('aria-expanded',expanded);$(buttonId).querySelector('i').textContent=expanded?'−':'+';if(expanded) onExpand?.();}; }
 function makeCollapsible(id,label,initiallyCollapsed=false){const section=$(id);if(!section||section.querySelector('.section-collapse-toggle'))return;section.classList.add('collapsible');if(initiallyCollapsed)section.classList.add('collapsed');const button=document.createElement('button');button.type='button';button.className='section-collapse-toggle';button.innerHTML=`<span><i>${initiallyCollapsed?'+':'−'}</i> ${label}</span><small>${initiallyCollapsed?'Expand':'Collapse'}</small>`;button.setAttribute('aria-expanded',String(!initiallyCollapsed));button.onclick=()=>{section.classList.toggle('collapsed');const expanded=!section.classList.contains('collapsed');button.setAttribute('aria-expanded',String(expanded));button.querySelector('i').textContent=expanded?'−':'+';button.querySelector('small').textContent=expanded?'Collapse':'Expand';};section.prepend(button);}
 $('briefing').after($('confidenceAssessment')); $('confidenceAssessment').after($('detail')); $('detail').after($('results')); $('results').after($('windCalculator')); $('windCalculator').after($('metarDetail')); $('metarDetail').after($('modelDetail')); $('modelDetail').after($('bulkRisk')); $('bulkRisk').after($('methodSection')); $('methodSection').after($('developerNote'));

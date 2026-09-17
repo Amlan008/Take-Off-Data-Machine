@@ -6,6 +6,7 @@ const toolFmt = d => new Intl.DateTimeFormat('en-GB', {
 let toolRunways = {};
 let toolAirports = [];
 const toolNum = value => value === null || value === undefined || value === '' ? NaN : Number(value);
+const toolEscape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const toolDate = value => {
   const numeric = Number(value);
   return new Date(Number.isFinite(numeric) && numeric > 1e8 ? (numeric < 1e12 ? numeric * 1000 : numeric) : value);
@@ -121,7 +122,7 @@ async function analyse() {
     const tafWind = taf ? { direction: toolNum(taf.wdir), speed: toolNum(taf.wspd), gust: toolNum(taf.wgst) } : null;
     tool$('toolWind').innerHTML = `<p class="calculator-time">${toolFmt(time)} · Runway ${runway.id} (${Math.round(runway.heading)}° true)</p><div class="table-wrap"><table><thead><tr><th>Source</th><th>Wind from / speed</th><th>Headwind / tailwind</th><th>Crosswind</th></tr></thead><tbody>${windRow('Open-Meteo model guidance', wind, runway, modelMessage)}${windRow('AWC TAF', tafWind, runway)}</tbody></table></div>`;
     tool$('toolTaf').textContent = tafs.map(item => item.rawTAF || item.raw_text || item.rawText || '').filter(Boolean).join('\n\n') || 'No current TAF bulletin returned by AWC.';
-    tool$('toolMetar').innerHTML = (metars || []).filter(item => toolDate(item.obsTime || item.reportTime) > Date.now() - 864e5).map(item => `<tr><td>${toolFmt(toolDate(item.obsTime || item.reportTime))}</td><td class="raw-metar">${String(item.rawOb || item.raw_text || '')}</td></tr>`).join('') || '<tr><td colspan="2">No METAR in the last 24 hours.</td></tr>';
+    tool$('toolMetar').innerHTML = (metars || []).filter(item => toolDate(item.obsTime || item.reportTime) > Date.now() - 864e5).map(item => `<tr><td>${toolFmt(toolDate(item.obsTime || item.reportTime))}</td><td class="raw-metar">${toolEscape(item.rawOb || item.raw_text || '')}</td></tr>`).join('') || '<tr><td colspan="2">No METAR in the last 24 hours.</td></tr>';
     tool$('toolNotice').textContent = 'Ready.';
   } catch (error) {
     tool$('toolNotice').textContent = error.message || 'Unable to load guidance.';

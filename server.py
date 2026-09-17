@@ -6,7 +6,9 @@ from urllib.error import HTTPError
 from io import BytesIO
 from zipfile import ZipFile
 from xml.etree import ElementTree
+from html import unescape
 import json
+import math
 import os
 import re
 import threading
@@ -16,6 +18,7 @@ from datetime import datetime, timezone
 ALLOWED_HOURLY = 'temperature_2m,wind_direction_10m,wind_speed_10m,wind_gusts_10m,pressure_msl,precipitation,precipitation_probability,weather_code,visibility,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,is_day,cloud_base,freezing_level_height,cape,convective_inhibition'
 PROXY_CACHE = {}
 PROXY_CACHE_LOCK = threading.Lock()
+ASH_ADVISORY_CACHE = {}
 FRESH_CACHE_SECONDS = 600
 STALE_CACHE_SECONDS = 3600
 
@@ -39,6 +42,7 @@ ICAO_AIRPORTS = {
     for airport in matches
     if len(str(airport.get('icao', '')).strip()) == 4
 }
+AIRPORT_LIST = [airport for matches in IATA_AIRPORTS.values() for airport in matches]
 
 class AppHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
@@ -59,6 +63,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self.verification_call('/v1/schema', {})
                 records = payload.get('records', [])
                 observations = payload.get('observations', [])
+                if not isinstance(records, list) or not isinstance(observations, list):
+                    return self.respond_error('Verification records and observations must be lists.', 400)
                 self.verification_batches('/v1/forecast-records', 'records', records)
                 self.verification_batches('/v1/metar-observations', 'observations', observations)
                 return self.respond_json({'enabled': True, 'saved': True, 'records': len(records), 'observations': len(observations)})
@@ -239,6 +245,18 @@ class AppHandler(SimpleHTTPRequestHandler):
                 except Exception as exc:
                     errors[name] = str(exc)
             return self.respond_json({'source': 'India Meteorological Department', 'data': bundle, 'errors': errors})
+        if parsed.path == '/api/ash/advisories':
+            # BoM republishes the last 24 hours of VAA text received from all
+            # nine ICAO VAACs.  It is an official, public alternative to the
+            # credentialed WIFS aggregation service.
+            try:
+                return self.respond_json({
+                    'source': 'Australian Bureau of Meteorology global VAAC feed',
+                    'source_url': 'https://www.bom.gov.au/products/Volc_ash_latest.shtml',
+                    'advisories': self.bom_ash_advisories(),
+                })
+            except Exception as exc:
+                return self.respond_error(f'Unable to read the official global VAAC feed: {exc}', 502)
         if parsed.path == '/api/open-meteo':
             q = parse_qs(parsed.query)
             source = q.get('source', ['forecast'])[0]
@@ -246,6 +264,12 @@ class AppHandler(SimpleHTTPRequestHandler):
             if not host:
                 return self.respond_error('Unknown weather data source.', 400)
             fields = {key: q[key][0] for key in ('latitude','longitude','start_date','end_date','past_days','forecast_days','models','wind_speed_unit','timezone') if key in q}
+            try:
+                latitude, longitude = float(fields.get('latitude', '')), float(fields.get('longitude', ''))
+            except ValueError:
+                return self.respond_error('Provide valid latitude and longitude.', 400)
+            if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+                return self.respond_error('Coordinates are outside the valid range.', 400)
             fields['hourly'] = ALLOWED_HOURLY
             return self.proxy(host + '?' + urlencode(fields))
         return super().do_GET()
@@ -423,6 +447,178 @@ class AppHandler(SimpleHTTPRequestHandler):
                     # official JTWC warnings.
                     continue
         return systems
+
+    def bom_ash_advisories(self):
+        """Extract the newest still-active VAA for each volcano from BoM.
+
+        The publisher's page is designed for people, not an API, so this
+        parser deliberately retains the complete agency text and only derives
+        stable header fields for cards.  If its markup changes, callers still
+        receive a clear upstream error rather than invented hazard data.
+        """
+        now = time.time()
+        with PROXY_CACHE_LOCK:
+            cached = ASH_ADVISORY_CACHE.get('active')
+        if cached and now - cached['saved_at'] < FRESH_CACHE_SECONDS:
+            return cached['advisories']
+        source = self.fetch_body('https://www.bom.gov.au/products/Volc_ash_latest.shtml').decode('utf-8', errors='replace')
+        clean = re.sub(r'(?is)<(?:script|style)[^>]*>.*?</(?:script|style)>', '', source)
+        clean = re.sub(r'(?i)<br\s*/?>', '\n', clean)
+        clean = re.sub(r'(?i)</(?:p|div|pre|li|h[1-6])\s*>', '\n', clean)
+        clean = unescape(re.sub(r'<[^>]+>', '', clean)).replace('\xa0', ' ')
+        clean = re.sub(r'\r', '', clean)
+        # Every advisory begins with the standard ICAO "VA ADVISORY" heading.
+        starts = list(re.finditer(r'(?im)^\s*VA ADVISORY\s*$', clean))
+        latest = {}
+        for index, match in enumerate(starts):
+            block = clean[match.start():starts[index + 1].start() if index + 1 < len(starts) else len(clean)]
+            end = re.search(r'(?im)^\s*NXT ADVISORY:.*$', block)
+            if end:
+                # Retain the complete line that controls whether the advisory
+                # remains active, then discard following page navigation text.
+                block = block[:end.end()]
+            block = re.sub(r'\n{3,}', '\n\n', block).strip()
+            volcano = re.search(r'(?im)^\s*VOLCANO:\s*(.+?)\s*$', block)
+            vaac = re.search(r'(?im)^\s*VAAC:\s*(.+?)\s*$', block)
+            dtg = re.search(r'(?im)^\s*DTG:\s*(\d{8}/\d{4}Z)\s*$', block)
+            if not volcano or not vaac or not dtg:
+                continue
+            # A cancelled/terminated advisory is historical context, not an
+            # active ash hazard.  A "not identifiable" advisory may remain
+            # active and is therefore retained unless explicitly ended.
+            if re.search(r'(?i)NXT ADVISORY:\s*(?:NO\s+FURTHER\s+ADVISOR(?:Y|IES)|NIL)', block):
+                continue
+            name = re.sub(r'\s+\d{5,7}\s*$', '', volcano.group(1).strip()).upper()
+            position = re.search(r'(?im)^\s*PSN:\s*(.+?)\s*$', block)
+            area = re.search(r'(?im)^\s*AREA:\s*(.+?)\s*$', block)
+            advisory = re.search(r'(?im)^\s*ADVISORY\s+NR:\s*(.+?)\s*$', block)
+            observed = re.search(r'(?ims)^\s*(?:OBS|EST)\s+VA\s+CLD:\s*(.*?)(?=^\s*FCST\s+VA\s+CLD\s*\+\d+\s*HR:|^\s*RMK:|^\s*NXT\s+ADVISORY:|\Z)', block)
+            forecasts = re.findall(r'(?ims)^\s*FCST\s+VA\s+CLD\s*\+(\d+)\s*HR:\s*(.*?)(?=^\s*FCST\s+VA\s+CLD\s*\+\d+\s*HR:|^\s*RMK:|^\s*NXT\s+ADVISORY:|\Z)', block)
+            ash_areas = []
+            if observed:
+                ash_areas.append({'label': 'Current / observed ash', 'lead_hours': 0, 'text': ' '.join(observed.group(1).split()), 'points': self.vaa_polygon_points(observed.group(1))})
+            for hours, text in forecasts:
+                ash_areas.append({'label': f'+{hours} hr forecast', 'lead_hours': int(hours), 'text': ' '.join(text.split()), 'points': self.vaa_polygon_points(text)})
+            item = {
+                'id': f"{vaac.group(1).strip().upper()}::{name}",
+                'volcano': volcano.group(1).strip(),
+                'vaac': vaac.group(1).strip().upper(),
+                'issued': dtg.group(1),
+                'position': position.group(1).strip() if position else 'Not supplied',
+                'area': area.group(1).strip() if area else 'Not supplied',
+                'advisory_number': advisory.group(1).strip() if advisory else 'Not supplied',
+                'observed_ash': ash_areas[0]['text'] if ash_areas else 'Not supplied',
+                'forecast_ash': [area for area in ash_areas if area['lead_hours'] > 0],
+                'ash_areas': ash_areas,
+                'text': block,
+            }
+            # Keep the per-polygon results so the interactive advisory map can
+            # swap airport markers when the user selects a future ash area.
+            for area in ash_areas:
+                area['impacts'] = self.ash_airport_impacts([area])
+            item['impacts'] = self.ash_airport_impacts(ash_areas)
+            existing = latest.get(item['id'])
+            if not existing or item['issued'] > existing['issued']:
+                latest[item['id']] = item
+        advisories = sorted(latest.values(), key=lambda item: item['issued'], reverse=True)
+        with PROXY_CACHE_LOCK:
+            ASH_ADVISORY_CACHE['active'] = {'advisories': advisories, 'saved_at': time.time()}
+        return advisories
+
+    def vaa_polygon_points(self, text):
+        """Decode ICAO compact coordinates such as N1447 W09132."""
+        points = []
+        for match in re.finditer(r'\b([NS])(\d{4,6})\s+([EW])(\d{5,7})\b', text.upper()):
+            def degrees(value, degree_digits):
+                degrees_part, minutes_part = value[:degree_digits], value[degree_digits:]
+                if len(minutes_part) == 2:
+                    minutes = float(minutes_part)
+                elif len(minutes_part) == 3:
+                    minutes = float(minutes_part) / 10
+                elif len(minutes_part) == 4:
+                    minutes = float(minutes_part[:2]) + float(minutes_part[2:]) / 60
+                else:
+                    return None
+                return float(degrees_part) + minutes / 60
+            lat, lon = degrees(match.group(2), 2), degrees(match.group(4), 3)
+            if lat is None or lon is None or lat > 90 or lon > 180:
+                continue
+            points.append({'lat': -lat if match.group(1) == 'S' else lat, 'lon': -lon if match.group(3) == 'W' else lon})
+        return points
+
+    def ash_airport_impacts(self, areas):
+        """Screen airports against agency ash polygons, retaining nearest hits.
+
+        This is deliberately geometric—not a concentration or wind-radii
+        calculation.  A planar local approximation is suitable because every
+        VAA polygon is relatively small; an airport inside the polygon is the
+        highest screen level, then the nearest polygon edge is used outside it.
+        """
+        candidates = []
+        for area in areas:
+            polygon = area.get('points', [])
+            if len(polygon) < 3:
+                continue
+            # A wide prefilter avoids performing geometry against the entire
+            # global inventory when an airport is clearly nowhere near a
+            # compact ash polygon.
+            min_lat, max_lat = min(point['lat'] for point in polygon) - 2.1, max(point['lat'] for point in polygon) + 2.1
+            min_lon, max_lon = min(point['lon'] for point in polygon) - 2.1, max(point['lon'] for point in polygon) + 2.1
+            for airport in AIRPORT_LIST:
+                try:
+                    lat, lon = float(airport['lat']), float(airport['lon'])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not min_lat <= lat <= max_lat or not min_lon <= lon <= max_lon:
+                    continue
+                inside = self.point_in_polygon(lat, lon, polygon)
+                distance = 0.0 if inside else self.polygon_distance_nm(lat, lon, polygon)
+                if not inside and distance > 100:
+                    continue
+                level = 'high' if inside else 'moderate' if distance <= 40 else 'low'
+                candidates.append({
+                    'iata': airport.get('iata', ''), 'icao': airport.get('icao', ''), 'name': airport.get('name', ''),
+                    'lat': lat, 'lon': lon,
+                    'distance_nm': round(distance), 'level': level, 'area_label': area['label'], 'lead_hours': area['lead_hours'],
+                })
+        # Keep one highest-severity / closest screen result per airport.
+        ranking = {'high': 0, 'moderate': 1, 'low': 2}
+        selected = {}
+        for candidate in candidates:
+            key = candidate['icao'] or candidate['iata']
+            previous = selected.get(key)
+            if not previous or (ranking[candidate['level']], candidate['distance_nm']) < (ranking[previous['level']], previous['distance_nm']):
+                selected[key] = candidate
+        return sorted(selected.values(), key=lambda item: (ranking[item['level']], item['distance_nm']))[:12]
+
+    @staticmethod
+    def point_in_polygon(lat, lon, polygon):
+        inside = False
+        for index, point in enumerate(polygon):
+            other = polygon[index - 1]
+            if (point['lat'] > lat) != (other['lat'] > lat):
+                crossing = (other['lon'] - point['lon']) * (lat - point['lat']) / (other['lat'] - point['lat']) + point['lon']
+                if lon < crossing:
+                    inside = not inside
+        return inside
+
+    @staticmethod
+    def polygon_distance_nm(lat, lon, polygon):
+        # Equirectangular projection centred at the target point, adequate for
+        # the short distances used by this *proximity* screen.
+        scale = 60.0
+        cosine = max(0.05, abs(math.cos(math.radians(lat))))
+        point_x, point_y = lon * scale * cosine, lat * scale
+        nearest = float('inf')
+        for index, start in enumerate(polygon):
+            end = polygon[(index + 1) % len(polygon)]
+            x1, y1 = start['lon'] * scale * cosine, start['lat'] * scale
+            x2, y2 = end['lon'] * scale * cosine, end['lat'] * scale
+            dx, dy = x2 - x1, y2 - y1
+            length_sq = dx * dx + dy * dy
+            ratio = 0 if length_sq == 0 else max(0, min(1, ((point_x - x1) * dx + (point_y - y1) * dy) / length_sq))
+            nearest = min(nearest, ((point_x - (x1 + ratio * dx)) ** 2 + (point_y - (y1 + ratio * dy)) ** 2) ** .5)
+        return nearest
 
     def fetch_body(self, url):
         now = time.time()

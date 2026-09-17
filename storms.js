@@ -18,6 +18,47 @@ function impactHtml(s){const rows=impacts(s);if(!s.forecast.length)return'<p cla
 function cards(){const n=$('stormCards');n.innerHTML=state.systems.length?state.systems.map(s=>{const badge=s.tcfa?'formation':(s.intensity||0)>=64?'high':(s.intensity||0)>=34?'moderate':'low';return`<article class="storm-card ${s.id===state.selectedId?'selected':''}" data-id="${esc(s.id)}" tabindex="0" role="button"><header><div><span class="section-label">${esc(s.source)}</span><h3>${esc(s.name)}</h3></div><strong class="storm-badge ${badge}">${s.tcfa?'TCFA':Number.isFinite(s.intensity)?`${Math.round(s.intensity)} KT`:'—'}</strong></header><p class="storm-position"><b>${esc(pos(s.position))}</b><span>${esc(basin(s))}</span></p><span class="impact-label">AIRPORT PROXIMITY SCREEN</span>${impactHtml(s)}<small>View official details →</small></article>`}).join(''):'<p class="storm-empty">No active systems returned.</p>';n.querySelectorAll('[data-id]').forEach(c=>{const open=()=>select(c.dataset.id);c.onclick=open;c.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}}})}
 function detail(s){const n=$('stormDetail');if(!s){n.classList.add('hidden');return}const image=s.image||s.graphic?`<figure class="official-track"><img src="${esc(s.image||s.graphic)}" ${s.imageFallback?`onerror="this.onerror=null;this.src='${esc(s.imageFallback)}'"`:''} alt="Official agency track graphic for ${esc(s.name)}"><figcaption>Original agency-issued track graphic · <a href="${esc(s.graphic)}" target="_blank" rel="noopener noreferrer">View on official website ↗</a></figcaption></figure>`:`<div class="graphic-unavailable"><b>Official track graphic unavailable</b><span>${s.tcfa?'JTWC has issued a formation alert, not a forecast-track graphic.':'The agency has not published a current track graphic. Use the official agency link below.'}</span></div>`;const facts=`<div class="storm-facts"><div><span>Current position</span><b>${esc(pos(s.position))}</b></div><div><span>Basin</span><b>${esc(basin(s))}</b></div><div><span>Official issue / update</span><b>${esc(utc(s.issued))}</b></div><div><span>Maximum wind</span><b>${Number.isFinite(s.intensity)?`${Math.round(s.intensity)} kt`:'Not supplied'}</b></div><div><span>Central pressure</span><b>${Number.isFinite(s.pressure)?`${Math.round(s.pressure)} hPa`:'Not supplied'}</b></div><div><span>Movement</span><b>${esc(s.movement)}</b></div></div>`;const table=s.forecast.length?`<section class="detail-block"><h3>Forecast positions & intensity</h3><table class="storm-table"><thead><tr><th>Valid time (UTC)</th><th>Position</th><th>Maximum wind</th></tr></thead><tbody>${s.forecast.map(p=>`<tr><td>${esc(utc(p.time))}</td><td>${esc(pos(p))}</td><td>${Number.isFinite(p.intensity)?`${Math.round(p.intensity)} kt`:'—'}</td></tr>`).join('')}</tbody></table></section>`:'';const text=s.tcfa||s.discussion?`<section class="detail-block official-text"><h3>${s.tcfa?'Official JTWC formation alert':s.textTitle||'Official agency discussion'}</h3><pre>${esc(s.tcfa||s.discussion)}</pre></section>`:'';n.innerHTML=`<div class="section-heading"><div><span class="section-label">SELECTED OFFICIAL SYSTEM</span><h2>${esc(s.name)} <small>${esc(s.source)}</small></h2></div></div>${image}<div class="storm-detail-grid"><section><h3>Official system data</h3><p>${esc(s.classification)}. Values are passed through from the named agency; Weather machine does not independently forecast storm track or intensity.</p>${facts}<div class="storm-links">${s.links.map(([l,u])=>`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(l)} ↗</a>`).join('')}</div></section><section class="detail-block"><h3>Airports potentially affected — proximity screen</h3><p>Airport-name colour shows geographic proximity to an official forecast centre; it is not an agency watch, warning, or wind-radius forecast.</p>${impactHtml(s)}</section></div>${table}${text}`;n.classList.remove('hidden')}
 function select(id){const s=state.systems.find(x=>x.id===id);if(!s)return;state.selectedId=id;cards();detail(s);$('stormDetail').scrollIntoView({behavior:'smooth',block:'start'})}
-async function load(){ $('refreshStorms').disabled=true;$('stormNotice').textContent='Retrieving official NHC / CPHC and JTWC advisory feeds…';const [n,j,i,a,ports,t]=await Promise.allSettled([api('/api/storms/nhc'),api('/api/storms/jtwc-warnings'),api('/api/storms/imd'),api('/api/storms/nrl'),api('/api/storms/airports'),api('/api/storms/jtwc-tcfas')]),alerts=t.status==='fulfilled'?t.value.alerts||[]:[],codes=new Set(alerts.map(x=>String(x.invest||'').toUpperCase())),systems=[];if(n.status==='fulfilled')systems.push(...nhc(n.value));if(j.status==='fulfilled')systems.push(...jtwc(j.value));if(i.status==='fulfilled')systems.push(...imdSystems(i.value));if(a.status==='fulfilled')systems.push(...nrl(a.value,codes));state.airports=ports.status==='fulfilled'?ports.value:[];systems.forEach(s=>{const x=alerts.find(x=>String(x.invest||'').toUpperCase()===s.code);if(x?.text){s.tcfa=x.text;s.links.splice(1,0,['JTWC TCFA text',x.url])}});await Promise.all(systems.filter(s=>s.source==='NHC / CPHC').map(enrich));state.systems=systems;state.selectedId=systems[0]?.id||null;$('stormCount').textContent=systems.length?`${systems.length} active system${systems.length===1?'':'s'}`:'No active systems returned';$('stormPositions').textContent=`${systems.reduce((n,s)=>n+s.forecast.length,0)} agency forecast points`;$('stormImpact').textContent=state.airports.length?'Local airport inventory ready':'Airport screening unavailable';cards();detail(systems[0]);$('stormNotice').textContent='Official feeds loaded. Western Pacific warnings use JTWC; JTWC INVESTs are shown only while their official TCFA is active.';$('refreshStorms').disabled=false }
+async function load(){
+  const refresh=$('refreshStorms');
+  refresh.disabled=true;
+  $('stormNotice').classList.remove('error');
+  $('stormNotice').textContent='Retrieving official NHC / CPHC and JTWC advisory feeds…';
+  try {
+    const [n,j,i,a,ports,t]=await Promise.allSettled([
+      api('/api/storms/nhc'),api('/api/storms/jtwc-warnings'),api('/api/storms/imd'),
+      api('/api/storms/nrl'),api('/api/storms/airports'),api('/api/storms/jtwc-tcfas')
+    ]);
+    const alerts=t.status==='fulfilled'?(t.value.alerts||[]):[];
+    const codes=new Set(alerts.map(item=>String(item.invest||'').toUpperCase()));
+    const systems=[];
+    if(n.status==='fulfilled')systems.push(...nhc(n.value));
+    if(j.status==='fulfilled')systems.push(...jtwc(j.value));
+    if(i.status==='fulfilled')systems.push(...imdSystems(i.value));
+    if(a.status==='fulfilled')systems.push(...nrl(a.value,codes));
+    state.airports=ports.status==='fulfilled'?ports.value:[];
+    systems.forEach(system=>{
+      const alert=alerts.find(item=>String(item.invest||'').toUpperCase()===system.code);
+      if(alert?.text){system.tcfa=alert.text;system.links.splice(1,0,['JTWC TCFA text',alert.url]);}
+    });
+    await Promise.allSettled(systems.filter(system=>system.source==='NHC / CPHC').map(enrich));
+    state.systems=systems;
+    state.selectedId=systems[0]?.id||null;
+    $('stormCount').textContent=systems.length?`${systems.length} active system${systems.length===1?'':'s'}`:'No active systems returned';
+    $('stormPositions').textContent=`${systems.reduce((count,system)=>count+system.forecast.length,0)} agency forecast points`;
+    $('stormImpact').textContent=state.airports.length?'Local airport inventory ready':'Airport screening unavailable';
+    cards();detail(systems[0]);
+    const failures=[n,j,a].filter(result=>result.status==='rejected').length;
+    $('stormNotice').textContent=failures?'Some official feeds are temporarily unavailable; displayed systems are from the feeds that responded.':'Official feeds loaded. Western Pacific warnings use JTWC; JTWC INVESTs are shown only while their official TCFA is active.';
+  } catch(error) {
+    state.systems=[];
+    state.selectedId=null;
+    cards();detail(null);
+    $('stormCount').textContent='Feed unavailable';
+    $('stormPositions').textContent='—';
+    $('stormImpact').textContent='Unavailable';
+    $('stormNotice').classList.add('error');
+    $('stormNotice').textContent=`Unable to load official storm feeds: ${error.message||'unknown error'}`;
+  } finally { refresh.disabled=false; }
+}
 function imdSystems(){return[]}
 $('refreshStorms').onclick=load;load();
