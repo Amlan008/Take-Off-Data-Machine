@@ -41,13 +41,13 @@
       </header>
 
       <section class="controls" aria-label="Forecast request">
-        <label>Airport ICAO<input id="icao" maxlength="4" value="KJFK" autocomplete="off" spellcheck="false" /></label>
+        <label>Airport ICAO or IATA<input id="icao" maxlength="4" value="KJFK" autocomplete="off" spellcheck="false" /></label>
         <label>Take-off window starts (UTC)<input id="start" type="datetime-local" /></label>
         <label>Take-off window ends (UTC)<input id="end" type="datetime-local" /></label>
         <button id="generate" type="button"><span>Generate data</span><b>↗</b></button>
       </section>
 
-      <section id="notice" class="notice">Enter an ICAO code and a UTC window. The previous 72 hours of METAR are used to estimate each model’s bias.</section>
+      <section id="notice" class="notice">Enter a four-letter ICAO or three-letter IATA code and a UTC window. The previous 72 hours of METAR are used to estimate each model’s bias.</section>
 
       <section id="bulkRisk" class="bulk-risk" aria-label="Flight-list weather risk check">
         <div class="section-heading"><div><span class="section-label">FLIGHT LIST CHECK</span><h2>Station weather-risk review <small>UTC</small></h2></div></div>
@@ -76,8 +76,8 @@
 
       <section id="results" class="results hidden">
         <div class="section-heading">
-          <div><span class="section-label">BIAS-CORRECTED ENSEMBLE</span></div>
-          <button id="download" class="text-button" type="button">Download CSV ↓</button>
+          <div><span class="section-label" id="forecastSourceLabel">BIAS-CORRECTED ENSEMBLE</span></div>
+          <div class="forecast-source-controls"><label>Forecast source<select id="forecastSource" aria-label="Forecast source"></select></label><button id="download" class="text-button" type="button">Download CSV ↓</button></div>
         </div>
         <div class="table-wrap"><table>
           <thead><tr><th>Time (UTC)</th><th>Temp<br /><small>°C</small></th><th>Wind direction<br /><small>°</small></th><th>Wind speed<br /><small>kt</small></th><th>Wind gust<br /><small>kt</small></th><th>MSL pressure<br /><small>hPa</small></th><th>Precipitation<br /><small>mm / 30 min</small></th><th>Precipitation type</th><th>Precip. probability<br /><small>%</small></th><th>Thunderstorm probability<br /><small>%</small></th><th>Fog / low-vis probability<br /><small>%</small></th><th>Weather<br /><small>interpretation · WMO</small></th><th>Cloud total<br /><small>%</small></th><th>Cloud low<br /><small>%</small></th><th>Cloud mid<br /><small>%</small></th><th>Cloud high<br /><small>%</small></th><th>Confidence<br /><small>source spread</small></th></tr></thead>
@@ -123,7 +123,7 @@
 
       <section id="detail" class="detail hidden">
         <div id="detailPanel" class="forecast-graphic-panel">
-          <div class="chart-topline"><div><span class="section-label">FORECAST GRAPHIC</span><h2>Ensemble Forecast</h2><p id="chartTitle">Temperature</p></div><div class="chart-actions"><div class="param-tabs" id="parameterTabs"></div><div class="chart-controls" aria-label="Chart display controls"><button id="modelForecastToggle" type="button" aria-pressed="true">Model forecasts: On</button><button id="chartTooltipToggle" type="button" aria-pressed="true">Tooltips: On</button></div></div></div>
+          <div class="chart-topline"><div><span class="section-label">FORECAST GRAPHIC</span><h2 id="chartSourceHeading">Ensemble Forecast</h2><p id="chartTitle">Temperature</p></div><div class="chart-actions"><div class="param-tabs" id="parameterTabs"></div><div class="chart-controls" aria-label="Chart display controls"><button id="modelForecastToggle" type="button" aria-pressed="true">Model forecasts: On</button><button id="chartTooltipToggle" type="button" aria-pressed="true">Tooltips: On</button></div></div></div>
           <div class="chart-wrap"><canvas id="chart" aria-label="Model forecast comparison" role="img"></canvas></div>
           <p class="chart-note">The chart covers the complete requested forecast window. Single-click a timestamp to add a vertical dotted reference line; double-click it to remove the line. Up to three coloured reference lines can be shown at once. The horizontal axis uses hourly UTC labels in 24-hour time; the date is shown beneath the first timestamp of each UTC day. Thin lines are uncorrected model forecasts and dots are observed METAR values. Shaded P10–P90 bands show spread across contributing sources. The wind view uses meteorological wind barbs on the left direction axis and speed on the right axis. In the precipitation view, coloured bars show ensemble precipitation amount, the blue line and right axis show ensemble precipitation probability, the thin green / amber / red strip across the top shows low / moderate / high convective risk, and the small symbols identify the interpreted WMO weather code and precipitation type. The ensemble-only grayscale cloud field is softly blended between high, mid and low levels; darker gray means greater cover. Below the time axis, <strong>C</strong> is total cloud cover.</p>
         </div>
@@ -157,7 +157,7 @@
       </section>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260917-weather-icons"></script>
+    <script src="app.js?v=20260924-airport-sources"></script>
     <script src="bulk-risk.js?v=20260917"></script>
   </body>
 </html>

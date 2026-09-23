@@ -12,6 +12,7 @@ h1 em{font-family:Georgia,serif;font-weight:400;color:var(--forest)}
 .controls label{display:flex;flex-direction:column;gap:7px;color:var(--muted);font:500 10px "DM Mono",monospace;letter-spacing:.08em;text-transform:uppercase}
 .controls input{border:0;background:transparent;color:var(--ink);font:500 15px "DM Sans",sans-serif;padding:0;outline:none;min-height:22px}
 .controls input#icao{text-transform:uppercase;letter-spacing:.08em}
+.forecast-source-controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.forecast-source-controls label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font:500 10px "DM Mono",monospace;letter-spacing:.07em;text-transform:uppercase}.forecast-source-controls select{max-width:260px;padding:7px 9px;border:1px solid var(--line);background:rgba(255,255,255,.78);color:var(--ink);font:500 12px "DM Mono",monospace}
 .controls button{border:0;background:var(--lime);color:var(--ink);font:600 14px "DM Sans";display:flex;justify-content:space-between;align-items:center;padding:0 17px;cursor:pointer}
 .controls button:hover{background:#c8eb43}
 .controls b{font-size:19px}

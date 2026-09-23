@@ -229,6 +229,40 @@ class AppHandler(SimpleHTTPRequestHandler):
             # The browser uses this local, fixed inventory solely for a
             # geographic proximity screen around agency forecast positions.
             return self.respond_json([airport for matches in IATA_AIRPORTS.values() for airport in matches])
+        if parsed.path == '/api/storms/point-weather':
+            # A selected storm point is queried on demand, rather than
+            # requesting weather for every point and airport on the map.
+            q = parse_qs(parsed.query)
+            try:
+                latitude = float(q.get('latitude', [''])[0])
+                longitude = float(q.get('longitude', [''])[0])
+            except ValueError:
+                return self.respond_error('Provide valid storm-point coordinates.', 400)
+            if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+                return self.respond_error('Storm-point coordinates are outside the valid range.', 400)
+            requested_time = q.get('time', [''])[0]
+            try:
+                payload = self.fetch_json('https://api.open-meteo.com/v1/forecast?' + urlencode({
+                    'latitude': latitude, 'longitude': longitude,
+                    'hourly': 'wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation',
+                    'past_days': 1, 'forecast_days': 16, 'timezone': 'UTC',
+                }))
+                hourly = payload.get('hourly', {})
+                times = hourly.get('time', [])
+                target = datetime.fromisoformat(requested_time.replace('Z', '+00:00')).replace(tzinfo=None) if requested_time else datetime.utcnow()
+                index = min(range(len(times)), key=lambda item: abs(datetime.fromisoformat(times[item]) - target)) if times else None
+                if index is None:
+                    raise ValueError('No hourly point weather was returned.')
+                return self.respond_json({
+                    'time': times[index] + 'Z',
+                    'wind_speed_kt': round(float(hourly.get('wind_speed_10m', [None])[index]) * .539957, 1) if hourly.get('wind_speed_10m', [None])[index] is not None else None,
+                    'wind_gust_kt': round(float(hourly.get('wind_gusts_10m', [None])[index]) * .539957, 1) if hourly.get('wind_gusts_10m', [None])[index] is not None else None,
+                    'wind_direction': hourly.get('wind_direction_10m', [None])[index],
+                    'precipitation_mm': hourly.get('precipitation', [None])[index],
+                    'source': 'Open-Meteo forecast model',
+                })
+            except Exception as exc:
+                return self.respond_error(f'Point weather is temporarily unavailable: {exc}', 502)
         if parsed.path == '/api/storms/imd':
             # IMD exposes the track, wind-warning fields and uncertainty cone
             # independently. Returning one same-origin bundle keeps browser
@@ -380,7 +414,7 @@ class AppHandler(SimpleHTTPRequestHandler):
     def jtwc_warning(self, text, warning_url, graphic_url, issued):
         subject = re.search(r'SUBJ/\s*([^\n]+?)\s+WARNING\s+NR\s*(\d+)', text, flags=re.I)
         position = re.search(r'WARNING POSITION:\s*(\d{6}Z)\s+---\s+NEAR\s+([\d.]+[NS])\s+([\d.]+[EW])', text, flags=re.I)
-        intensity = re.search(r'PRESENT WIND DISTRIBUTION:.*?MAX SUSTAINED WINDS\s*-\s*(\d+)\s*KT', text, flags=re.I | re.S)
+        intensity = re.search(r'PRESENT WIND DISTRIBUTION:.*?MAX SUSTAINED WINDS\s*-\s*(\d+)\s*KT(?:,\s*GUSTS\s*(\d+)\s*KT)?', text, flags=re.I | re.S)
         pressure = re.search(r'MINIMUM CENTRAL PRESSURE AT\s+\d{6}Z\s+IS\s+(\d+)\s*MB', text, flags=re.I)
         movement = re.search(r'MOVEMENT PAST SIX HOURS\s*-\s*(\d+)\s+DEGREES\s+AT\s+(\d+)\s+KTS', text, flags=re.I)
         if not subject or not position:
@@ -389,15 +423,29 @@ class AppHandler(SimpleHTTPRequestHandler):
         lat_raw, lon_raw = position.group(2).upper(), position.group(3).upper()
         lat = float(lat_raw[:-1]) * (-1 if lat_raw.endswith('S') else 1)
         lon = float(lon_raw[:-1]) * (-1 if lon_raw.endswith('W') else 1)
+        radii_by_lead = self.jtwc_wind_radii(text)
         forecasts = []
-        pattern = r'(\d+)\s*HRS,\s*VALID AT:\s*(\d{6}Z)\s+---\s+([\d.]+[NS])\s+([\d.]+[EW])\s+MAX SUSTAINED WINDS\s*-\s*(\d+)\s*KT'
-        for lead, valid, forecast_lat, forecast_lon, wind in re.findall(pattern, text, flags=re.I | re.S):
+        pattern = r'(\d+)\s*HRS,\s*VALID AT:\s*(\d{6}Z)\s+---\s+([\d.]+[NS])\s+([\d.]+[EW])\s+MAX SUSTAINED WINDS\s*-\s*(\d+)\s*KT(?:,\s*GUSTS\s*(\d+)\s*KT)?'
+        for forecast_match in re.finditer(pattern, text, flags=re.I | re.S):
+            lead, valid, forecast_lat, forecast_lon, wind, gust = forecast_match.groups()
+            # The vector belongs to this forecast block and describes the
+            # motion from this point to the next official point. Do not look
+            # past the separator, otherwise the final point could inherit an
+            # unrelated vector from a later section of the warning.
+            following = text[forecast_match.end():]
+            separator = re.search(r'\n\s*---', following)
+            block = following[:separator.start()] if separator else following
+            vector = re.search(r'VECTOR\s+TO\s+\d+\s+HR\s+POSIT:\s*(\d+)\s*DEG\s*/\s*(\d+)\s*KTS?', block, flags=re.I)
             forecasts.append({
                 'lead_hours': int(lead),
                 'time': self.jtwc_time(valid, anchor),
+                'valid_time': valid,
                 'lat': float(forecast_lat[:-1]) * (-1 if forecast_lat.upper().endswith('S') else 1),
                 'lon': float(forecast_lon[:-1]) * (-1 if forecast_lon.upper().endswith('W') else 1),
                 'intensity': int(wind),
+                'gust': int(gust) if gust else None,
+                'next_vector': f'{int(vector.group(1)):03d} DEG / {int(vector.group(2))} KTS' if vector else None,
+                'radii': radii_by_lead.get(int(lead), {}),
             })
         clean_name = re.sub(r'\s+', ' ', subject.group(1)).strip().title()
         return {
@@ -406,8 +454,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             'classification': clean_name.split(' ', 2)[0] if clean_name else 'Tropical cyclone',
             'warning_number': int(subject.group(2)),
             'issued': issued,
-            'position': {'lat': lat, 'lon': lon, 'time': self.jtwc_time(position.group(1), anchor)},
+            'position': {'lat': lat, 'lon': lon, 'time': self.jtwc_time(position.group(1), anchor), 'valid_time': position.group(1)},
             'intensity': int(intensity.group(1)) if intensity else None,
+            'gust': int(intensity.group(2)) if intensity and intensity.group(2) else None,
+            'radii': radii_by_lead.get(0, {}),
             'pressure': int(pressure.group(1)) if pressure else None,
             'movement': f'{movement.group(1)}° / {movement.group(2)} kt' if movement else 'Not supplied',
             'forecast': forecasts,
@@ -415,6 +465,32 @@ class AppHandler(SimpleHTTPRequestHandler):
             'graphic_url': graphic_url,
             'discussion': text.strip(),
         }
+
+    def jtwc_wind_radii(self, text):
+        """Read official JTWC quadrant radii without estimating any winds.
+
+        JTWC writes the current distribution before the first forecast-radii
+        heading, then repeats the same threshold/quadrant language for each
+        lead time.  Keep the source's 34/50/64 kt values verbatim.
+        """
+        result = {}
+        lead_marker = re.compile(r'(?:FORECAST\s+WIND\s+RADII\s+AT\s+(\d+)\s*HRS|(\d+)\s*HRS,\s*VALID\s+AT\s*:?)', re.I)
+        radius = re.compile(
+            r'RADIUS\s+OF\s+0?(34|50|64)\s+KT\s+WINDS\s*-\s*(.*?)(?=\n\s*RADIUS\s+OF|\n\s*FORECAST\s+(?:WIND\s+RADII|POSITION)|\Z)',
+            re.I | re.S,
+        )
+        for match in radius.finditer(text):
+            # Current distribution appears before any lead marker.  Each
+            # later JTWC forecast block begins "12 HRS, VALID AT:" (newer
+            # products) or a dedicated forecast-wind-radii heading.
+            leads = list(lead_marker.finditer(text[:match.start()]))
+            active_lead = int(next(value for value in leads[-1].groups() if value)) if leads else 0
+            quadrants = {}
+            for distance, quadrant in re.findall(r'(\d{1,3})\s*NM\s*(NORTHEAST|SOUTHEAST|SOUTHWEST|NORTHWEST)\s+QUADRANT', match.group(2), re.I):
+                quadrants[{'NORTHEAST': 'NE', 'SOUTHEAST': 'SE', 'SOUTHWEST': 'SW', 'NORTHWEST': 'NW'}[quadrant.upper()]] = int(distance)
+            if quadrants:
+                result.setdefault(active_lead, {})[match.group(1)] = quadrants
+        return result
 
     def jtwc_warnings(self):
         rss = self.fetch_body('https://www.metoc.navy.mil/jtwc/rss/jtwc.rss')
