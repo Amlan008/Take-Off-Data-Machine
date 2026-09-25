@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 ALLOWED_HOURLY = 'temperature_2m,wind_direction_10m,wind_speed_10m,wind_gusts_10m,pressure_msl,precipitation,precipitation_probability,weather_code,visibility,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,is_day,cloud_base,freezing_level_height,cape,convective_inhibition'
 PROXY_CACHE = {}
 PROXY_CACHE_LOCK = threading.Lock()
+OPEN_METEO_REQUEST_LOCK = threading.Lock()
+OPEN_METEO_LAST_REQUEST = 0.0
 ASH_ADVISORY_CACHE = {}
 FRESH_CACHE_SECONDS = 600
 STALE_CACHE_SECONDS = 3600
@@ -697,6 +699,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         return nearest
 
     def fetch_body(self, url):
+        global OPEN_METEO_LAST_REQUEST
         now = time.time()
         with PROXY_CACHE_LOCK:
             cached = PROXY_CACHE.get(url)
@@ -733,14 +736,28 @@ class AppHandler(SimpleHTTPRequestHandler):
             # Open-Meteo can throttle shared cloud egress addresses. Retry a
             # small number of rate-limited requests instead of failing an
             # otherwise valid forecast generation immediately.
+            is_open_meteo = 'open-meteo.com/' in url
             for attempt in range(3):
                 try:
-                    with urlopen(request, timeout=30) as response:
-                        body = response.read()
-                        with PROXY_CACHE_LOCK:
-                            PROXY_CACHE[url] = {'body': body, 'saved_at': time.time()}
-                        self.cache_state = 'MISS'
-                        return body
+                    # Open-Meteo rate limits concurrent traffic from a shared
+                    # cloud IP.  Pace *all* model requests through one short
+                    # queue so opening several airport popups cannot create a
+                    # burst of simultaneous upstream calls.
+                    if is_open_meteo:
+                        with OPEN_METEO_REQUEST_LOCK:
+                            delay = .45 - (time.time() - OPEN_METEO_LAST_REQUEST)
+                            if delay > 0:
+                                time.sleep(delay)
+                            with urlopen(request, timeout=30) as response:
+                                body = response.read()
+                            OPEN_METEO_LAST_REQUEST = time.time()
+                    else:
+                        with urlopen(request, timeout=30) as response:
+                            body = response.read()
+                    with PROXY_CACHE_LOCK:
+                        PROXY_CACHE[url] = {'body': body, 'saved_at': time.time()}
+                    self.cache_state = 'MISS'
+                    return body
                 except HTTPError as exc:
                     if exc.code != 429 or attempt == 2:
                         raise
