@@ -4,6 +4,8 @@ const MODEL_CATALOG = [
   ['meteofrance_arpege_world', 'ARPEGE World'], ['cma_grapes_global', 'CMA GRAPES'], ['bom_access_global', 'ACCESS Global']
 ];
 const BEST_MATCH_SOURCE={id:'best_match',name:'Open-Meteo Best Match'};
+// Keep canvas charts as legible as the night-operations interface.
+if (window.Chart) { Chart.defaults.color='#c5d1d2'; Chart.defaults.borderColor='#304047'; }
 function regionalModels(lat,lon){
   const inBox=(a,b,c,d)=>lat>=a&&lat<=b&&lon>=c&&lon<=d, models=[];
   if(inBox(20,55,-130,-60)) models.push(['hrrr_conus','HRRR CONUS'],['nbm_conus','NBM CONUS'],['nam_conus','NAM CONUS']);

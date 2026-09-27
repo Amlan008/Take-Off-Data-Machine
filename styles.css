@@ -95,3 +95,9 @@ tbody tr:hover,tbody tr.selected{background:#e9eee2}
 .summary{font-size:12px}
 .summary div+div{padding-left:10px}
 }
+
+/* Shared foundation for pages that do not include a page-specific theme layer. */
+body{background:#0d1418;color:#edf3ef}
+:root{--ink:#edf3ef;--muted:#a5b4b8;--line:#304047;--paper:#0d1418;--lime:#8cbdd7;--forest:#67d0ad;--orange:#f3a15d;--blue:#72abd7}
+.app-nav a{color:var(--muted)}.app-nav a:hover,.app-nav a.active{color:var(--lime);border-color:var(--lime)}
+.controls,.results,.detail,.bulk-risk,.confidence-cell,.confidence-lead-detail{background:#141f25;border-color:var(--line);box-shadow:none}.table-wrap{background:#111b20}th{background:#17242a;color:var(--muted);border-color:var(--line)}td{border-color:#26363d}tbody tr:hover,tbody tr.selected{background:#1b2d31}.text-button{color:#9be4c5}.calculator-controls input,.calculator-controls select,.bulk-controls input,.forecast-source-controls select{background:#17242a;color:var(--ink);border-color:var(--line)}.confidence-cell.high{background:#1b352d}.confidence-cell.moderate{background:#3a321d}.confidence-cell.low{background:#3b2728}.confidence-lead-detail{color:var(--ink)}.model-chip-list span{background:#1b2a30;border-color:#3a4a4f}.bulk-results td.risk-low{background:#1b352d;color:#8ee0be}.bulk-results td.risk-moderate{background:#3a321d;color:#f4ce72}.bulk-results td.risk-high{background:#3b2728;color:#ffaaa0}
