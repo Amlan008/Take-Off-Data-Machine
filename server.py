@@ -244,14 +244,19 @@ class AppHandler(SimpleHTTPRequestHandler):
                 return self.respond_error('Storm-point coordinates are outside the valid range.', 400)
             requested_time = q.get('time', [''])[0]
             try:
+                target = datetime.fromisoformat(requested_time.replace('Z', '+00:00')).replace(tzinfo=None) if requested_time else datetime.utcnow()
+                # Airport popups need one forecast hour, not the previous day
+                # plus a 16-day forecast.  Keeping this upstream request to a
+                # single UTC date materially lowers its cost and rate-limit
+                # exposure when users inspect several airports on a map.
+                target_date = target.date().isoformat()
                 payload = self.fetch_json('https://api.open-meteo.com/v1/forecast?' + urlencode({
                     'latitude': latitude, 'longitude': longitude,
                     'hourly': 'wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation',
-                    'past_days': 1, 'forecast_days': 16, 'timezone': 'UTC',
+                    'start_date': target_date, 'end_date': target_date, 'timezone': 'UTC',
                 }))
                 hourly = payload.get('hourly', {})
                 times = hourly.get('time', [])
-                target = datetime.fromisoformat(requested_time.replace('Z', '+00:00')).replace(tzinfo=None) if requested_time else datetime.utcnow()
                 index = min(range(len(times)), key=lambda item: abs(datetime.fromisoformat(times[item]) - target)) if times else None
                 if index is None:
                     raise ValueError('No hourly point weather was returned.')

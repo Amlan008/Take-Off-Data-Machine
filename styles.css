@@ -4,7 +4,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:"DM Sans",san
 .shell{max-width:1240px;margin:auto;padding:60px 42px 80px}
 .eyebrow,.section-label{font:500 11px "DM Mono",monospace;letter-spacing:.12em;color:var(--forest)}
 .eyebrow span{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--orange);margin-right:8px}
-.app-nav{display:flex;gap:18px;margin-top:14px}.app-nav a{color:var(--muted);font:500 11px "DM Mono",monospace;letter-spacing:.04em;text-decoration:none;padding-bottom:4px;border-bottom:1px solid transparent}.app-nav a:hover,.app-nav a.active{color:var(--forest);border-color:var(--forest)}
+.app-nav{display:flex;gap:18px;margin-top:14px;flex-wrap:wrap}.app-nav a{color:var(--muted);font:500 11px "DM Mono",monospace;letter-spacing:.04em;text-decoration:none;padding-bottom:4px;border-bottom:1px solid transparent}.app-nav a:hover,.app-nav a.active{color:var(--forest);border-color:var(--forest)}
 h1{font-size:clamp(54px,8vw,108px);line-height:.84;letter-spacing:-.075em;margin:24px 0 20px;font-weight:600}
 h1 em{font-family:Georgia,serif;font-weight:400;color:var(--forest)}
 .intro{max-width:390px;font-size:17px;line-height:1.45;color:var(--muted);margin:0}
