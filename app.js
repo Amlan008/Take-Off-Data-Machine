@@ -4,8 +4,9 @@ const MODEL_CATALOG = [
   ['meteofrance_arpege_world', 'ARPEGE World'], ['cma_grapes_global', 'CMA GRAPES'], ['bom_access_global', 'ACCESS Global']
 ];
 const BEST_MATCH_SOURCE={id:'best_match',name:'Open-Meteo Best Match'};
-// Keep canvas charts as legible as the night-operations interface.
-if (window.Chart) { Chart.defaults.color='#c5d1d2'; Chart.defaults.borderColor='#304047'; }
+// Forecast plots use a light beige canvas for long-shift readability, while
+// the surrounding application keeps the low-glare night-operations theme.
+if (window.Chart) { Chart.defaults.color='#42524f'; Chart.defaults.borderColor='#cfc7b5'; }
 function regionalModels(lat,lon){
   const inBox=(a,b,c,d)=>lat>=a&&lat<=b&&lon>=c&&lon<=d, models=[];
   if(inBox(20,55,-130,-60)) models.push(['hrrr_conus','HRRR CONUS'],['nbm_conus','NBM CONUS'],['nam_conus','NAM CONUS']);
@@ -788,7 +789,7 @@ function drawMeteogram(){
     {label:'Corrected ensemble',data:series('temp'),borderColor:'#17493a',borderWidth:2.5,pointRadius:0,tension:.18,unit:'°C'},
     {label:'Observed METAR',type:'scatter',data:observations('temp'),borderColor:'#e75e3f',backgroundColor:'#e75e3f',pointRadius:2.5,unit:'°C'}
   ],{x:xAxis(false),y:{title:{display:true,text:'°C',font:{family:'DM Mono',size:9}},grid:{color:'#e5e9e4'},ticks:{font:{family:'DM Mono',size:8}}}});
-  const windBarbs={id:'meteogramWindBarbs',afterDatasetsDraw(chart){const {ctx}=chart;chart.data.datasets.forEach((set,index)=>{if(!set.windBarbs)return;chart.getDatasetMeta(index).data.forEach((element,pointIndex)=>{const point=set.data[pointIndex],direction=point?.y,speed=point?.speed;if(!Number.isFinite(direction)||!Number.isFinite(speed))return;let remaining=Math.max(0,Math.round(speed/5)*5),offset=-7;ctx.save();ctx.translate(element.x,element.y);ctx.rotate(direction*Math.PI/180);ctx.strokeStyle=set.barbColor;ctx.fillStyle=set.barbColor;ctx.lineWidth=.55;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(0,2);ctx.lineTo(0,-8);ctx.stroke();while(remaining>=50){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(3.6,offset+1.8);ctx.lineTo(0,offset+3.3);ctx.closePath();ctx.fill();remaining-=50;offset+=3.4;}while(remaining>=10){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(3.6,offset+1.8);ctx.stroke();remaining-=10;offset+=2.5;}if(remaining>=5){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(1.8,offset+.9);ctx.stroke();}ctx.restore();});});}};
+  const windBarbs={id:'meteogramWindBarbs',afterDatasetsDraw(chart){const {ctx}=chart;chart.data.datasets.forEach((set,index)=>{if(!set.windBarbs)return;chart.getDatasetMeta(index).data.forEach((element,pointIndex)=>{const point=set.data[pointIndex],direction=point?.y,speed=point?.speed;if(!Number.isFinite(direction)||!Number.isFinite(speed))return;let remaining=Math.max(0,Math.round(speed/5)*5),offset=-8;ctx.save();ctx.translate(element.x,element.y);ctx.rotate(direction*Math.PI/180);ctx.strokeStyle=set.barbColor;ctx.fillStyle=set.barbColor;ctx.lineWidth=.7;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(0,3);ctx.lineTo(0,-10);ctx.stroke();while(remaining>=50){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(4.2,offset+2.1);ctx.lineTo(0,offset+3.8);ctx.closePath();ctx.fill();remaining-=50;offset+=3.8;}while(remaining>=10){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(4.2,offset+2.1);ctx.stroke();remaining-=10;offset+=2.8;}if(remaining>=5){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(2.1,offset+1);ctx.stroke();}ctx.restore();});});}};
   add('meteogramWind',[
     {label:'Ensemble direction',type:'scatter',data:rows.map(row=>({x:row.time,y:row.direction,speed:row.speed})),yAxisID:'direction',borderColor:'#17493a',pointRadius:0,windBarbs:true,barbColor:'#17493a',unit:'°'},
     {label:'Ensemble speed',data:series('speed'),yAxisID:'speed',borderColor:'#17493a',borderWidth:2,pointRadius:0,tension:.18,unit:'kt'},
@@ -850,11 +851,11 @@ function drawChart(){
     datasets.push({label:sourceName,type:isPrecip?'bar':'line',data:activeData,yAxisID:isPrecip?'yAmount':undefined,borderColor:'#17493a',borderWidth:isPrecip?0:3,backgroundColor:isPrecip?activeData.map(p=>precipStyle(p.y).color):'#17493a',pointRadius:0,tension:.18});
     if(isEnsemble&&isPrecip) datasets.push({label:'Precipitation probability',type:'line',data:activeSeries('precipProbability'),yAxisID:'yProbability',borderColor:'#4f7ebc',backgroundColor:'#4f7ebc',borderWidth:2.2,pointRadius:2,pointHoverRadius:4,tension:.18});
   }
-  const windBarbPlugin={id:'windBarbs',afterDatasetsDraw(chart){ if(!isWind) return; const {ctx}=chart; chart.data.datasets.forEach((set,index)=>{ if(!set.windBarbs) return; const meta=chart.getDatasetMeta(index); meta.data.forEach((element,pointIndex)=>{const point=set.data[pointIndex], direction=point?.y, speed=point?.speed;if(!Number.isFinite(direction)||!Number.isFinite(speed)) return; const lineWidth=set.label.startsWith('Corrected') ? .95 : .55; let remaining=Math.max(0,Math.round(speed/5)*5); ctx.save();ctx.translate(element.x,element.y); // A meteorological barb shaft points toward the direction the wind comes FROM.
-        ctx.rotate(direction*Math.PI/180);ctx.strokeStyle=set.barbColor;ctx.fillStyle=set.barbColor;ctx.lineWidth=lineWidth;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(0,3);ctx.lineTo(0,-10);ctx.stroke();let offset=-9;
-        while(remaining>=50){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(4.5,offset+2.25);ctx.lineTo(0,offset+4);ctx.closePath();ctx.fill();remaining-=50;offset+=4;}
-        while(remaining>=10){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(4.5,offset+2.25);ctx.stroke();remaining-=10;offset+=3;}
-        if(remaining>=5){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(2.25,offset+1.1);ctx.stroke();}ctx.restore();}); }); }};
+  const windBarbPlugin={id:'windBarbs',afterDatasetsDraw(chart){ if(!isWind) return; const {ctx}=chart; chart.data.datasets.forEach((set,index)=>{ if(!set.windBarbs) return; const meta=chart.getDatasetMeta(index); meta.data.forEach((element,pointIndex)=>{const point=set.data[pointIndex], direction=point?.y, speed=point?.speed;if(!Number.isFinite(direction)||!Number.isFinite(speed)) return; const lineWidth=set.label.startsWith('Corrected') ? 1.1 : .7; let remaining=Math.max(0,Math.round(speed/5)*5); ctx.save();ctx.translate(element.x,element.y); // A meteorological barb shaft points toward the direction the wind comes FROM.
+        ctx.rotate(direction*Math.PI/180);ctx.strokeStyle=set.barbColor;ctx.fillStyle=set.barbColor;ctx.lineWidth=lineWidth;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(0,4);ctx.lineTo(0,-12);ctx.stroke();let offset=-10.5;
+        while(remaining>=50){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(5.4,offset+2.7);ctx.lineTo(0,offset+4.8);ctx.closePath();ctx.fill();remaining-=50;offset+=4.8;}
+        while(remaining>=10){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(5.4,offset+2.7);ctx.stroke();remaining-=10;offset+=3.6;}
+        if(remaining>=5){ctx.beginPath();ctx.moveTo(0,offset);ctx.lineTo(2.7,offset+1.35);ctx.stroke();}ctx.restore();}); }); }};
   const cloudLayerPlugin={id:'cloudLayers',beforeDatasetsDraw(chart){
     if(!isPrecip) return;
     const {ctx,chartArea}=chart, x=chart.scales.x, rows=chartRows, spacing=rows.length>1?Math.abs(x.getPixelForValue(rows[1].time)-x.getPixelForValue(rows[0].time)):16, columnWidth=Math.max(2,spacing+1), cloudOpacity=value=>{const fraction=Math.max(0,Math.min(100,value||0))/100;return .025+.75*Math.pow(fraction,1.3);};
