@@ -1,5 +1,7 @@
 const $ = id => document.getElementById(id);
 let stationNames;
+let allTafRows=[];
+let activeCategory='all';
 
 const PHENOMENA = {
   DZ:'drizzle', RA:'rain', SN:'snow', SG:'snow grains', IC:'ice crystals', PL:'ice pellets', GR:'hail', GS:'small hail / snow pellets', UP:'unknown precipitation',
@@ -7,7 +9,6 @@ const PHENOMENA = {
 };
 const DESCRIPTORS = {MI:'shallow', BC:'patches of', PR:'partial', DR:'drifting', BL:'blowing', SH:'showers of', TS:'thunderstorm with', FZ:'freezing'};
 const PRECIP = new Set(['DZ','RA','SN','SG','IC','PL','GR','GS','UP']);
-const SEVERE_PHENOMENA = new Set(['VA','GR','GS','IC','PL','DS','SS','FC']);
 const VISIBILITY_PHENOMENA = new Set(['BR','FG','FU','DU','SA','HZ','PY']);
 const WEATHER_TOKEN = /^(?:\+|-)?(?:VC)?(?:(?:MI|BC|PR|DR|BL|SH|TS|FZ))?(?:(?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PY|PO|SQ|FC|SS|DS))+$/;
 // Airport-specific non-precipitation visibility screens. Each value is the
@@ -23,12 +24,13 @@ const LANDING_MINIMA_METRES = {
 
 function escapeHtml(value){ return String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
 function severityRank(level){ return ({concern:1,bad:2,severe:3})[level] || 0; }
-function levelLabel(level){ return ({concern:'Weather concern',bad:'Bad weather',severe:'Severe weather'})[level] || 'Weather concern'; }
+function levelLabel(level){ return ({concern:'Marginal weather',bad:'Bad weather',severe:'Severe weather'})[level] || 'Marginal weather'; }
 function unique(items){ return [...new Set(items.filter(Boolean))]; }
 
 function decodeWeather(token){
   const original=token;
-  if(token === 'DSTS') return {token:original, description:'thunderstorm with dust storm', precip:false, level:'severe'};
+  if(/^[+-]?DSTS$/.test(token)) return {token:original, description:'thunderstorm with dust storm', precip:false, parts:['DS'], descriptor:'TS', intensity:token[0] === '+' || token[0] === '-' ? token[0] : ''};
+  if(/^[+-]?TS$/.test(token)) return {token:original, description:'thunderstorm', precip:false, parts:[], descriptor:'TS', intensity:token[0] === '+' || token[0] === '-' ? token[0] : ''};
   let intensity='';
   if(token[0] === '+' || token[0] === '-'){ intensity=token[0]; token=token.slice(1); }
   let vicinity=false;
@@ -47,10 +49,7 @@ function decodeWeather(token){
   if(intensity === '+') phrase=`heavy ${phrase}`;
   if(intensity === '-') phrase=`light ${phrase}`;
   const precip=parts.some(part=>PRECIP.has(part));
-  let level='concern';
-  if(parts.some(part=>SEVERE_PHENOMENA.has(part)) || descriptor === 'FZ' || intensity === '+') level='severe';
-  else if(descriptor === 'TS' || parts.some(part=>['FG','SQ','DU','SA'].includes(part)) || descriptor === 'BL') level='bad';
-  return {token:original,description:phrase,precip,level,parts,descriptor,intensity};
+  return {token:original,description:phrase,precip,parts,descriptor,intensity};
 }
 
 function parseVisibility(tokens){
@@ -89,7 +88,7 @@ function parseWind(tokens){
 function lowClouds(tokens){
   return tokens.map(token => {
     const match=token.match(/^(FEW|SCT|BKN|OVC|VV)(\d{3})/);
-    return match && Number(match[2]) < 7 ? {token,description:`${match[1] === 'VV' ? 'vertical visibility' : ({FEW:'few',SCT:'scattered',BKN:'broken',OVC:'overcast'}[match[1]])} cloud ${Number(match[2]) * 100} ft`} : null;
+    return match ? {token,amount:match[1],hundredsFt:Number(match[2]),description:`${match[1] === 'VV' ? 'vertical visibility' : ({FEW:'few',SCT:'scattered',BKN:'broken',OVC:'overcast'}[match[1]])} cloud ${Number(match[2]) * 100} ft`} : null;
   }).filter(Boolean);
 }
 
@@ -103,37 +102,70 @@ function analyseCondition(text, station=''){
   const precipitation=weather.filter(item=>item.precip);
   const landingMinimum=LANDING_MINIMA_METRES[station];
   const hasAirportThreshold=Number.isFinite(landingMinimum);
-  const visibilityThreshold=hasAirportThreshold ? landingMinimum + 500 : Number.NaN;
-  const defaultNonPrecipitationScreen=visibility && !precipitation.length && !hasAirportThreshold && (
-    (Number.isFinite(visibility.meters) && visibility.meters <= 1500) ||
-    (Number.isFinite(visibility.sm) && visibility.sm <= 1.5)
-  );
-  const nonPrecipitationScreen=visibility && !precipitation.length && (
-    (hasAirportThreshold && visibilityInMetres(visibility) < visibilityThreshold) || defaultNonPrecipitationScreen
-  );
+  const visibilityMetres=visibilityInMetres(visibility);
+  const gust=wind?.gust ?? -1;
+  const isNonPrecipitation=Boolean(visibility) && !precipitation.length;
+  const codeIs=(item,...codes)=>codes.includes(item.token.toUpperCase());
+  const isMarginalCode=item=>codeIs(item,'-RA','DZ','-SN','-TSRA','BLDU','SHRA');
+  const isBadWindCode=item=>codeIs(item,'-RA','+SHRA','-SN','-TSRA','BLDU');
+  const isHeavyCore=item=>item.intensity==='+' && (item.parts.includes('RA') || item.parts.includes('SN') || item.descriptor==='TS');
+  const isSevereDust=item=>item.parts.includes('SA') || item.parts.includes('SS') || item.parts.includes('DS');
+  const isThunderstormHail=item=>item.descriptor==='TS' && (item.parts.includes('GR') || item.parts.includes('GS'));
+  const isSnowTransport=item=>['DRSN','BLSN'].includes(item.token.toUpperCase());
+
+  // Explicit weather-code screens. A code is added only when its matching
+  // visibility/wind qualification is present; the highest applicable level
+  // is retained for the report/group summary.
   for(const item of weather){
-    // For the configured airports, fog/mist/haze/smoke/dust/sand are placed in
-    // the risk list only when the associated non-precipitation visibility is
-    // below that airport's minimum-plus-500-m screen.
-    const visibilityOnly=item.parts?.some(part=>VISIBILITY_PHENOMENA.has(part));
-    if(!item.precip && visibility && visibilityOnly && !nonPrecipitationScreen) continue;
-    events.push({token:item.token,description:item.description,level:item.level});
+    let level='';
+    if(isHeavyCore(item) || isThunderstormHail(item) || isSevereDust(item)) level='severe';
+    else if(isSnowTransport(item) && gust > 25) level='severe';
+    else if(isBadWindCode(item) && gust > 24) level='bad';
+    else if((item.parts.includes('RA') || item.parts.includes('SN') || item.descriptor==='TS') && visibilityMetres < 2000) level='bad';
+    else if(isMarginalCode(item) && gust >= 15 && gust <= 19 && visibilityMetres >= 2000) level='concern';
+    if(level) events.push({token:item.token,description:item.description,level});
   }
-  if(wind?.gust >= 25){
-    const severeWithPrecip=precipitation.length > 0;
-    events.push({token:wind.token,description:`wind gusts ${wind.gust} kt${severeWithPrecip ? ' with precipitation' : ''}`,level:severeWithPrecip ? 'severe' : 'concern'});
+
+  // Gusts are a standalone screen only above 29 kt. The 15–24 kt bands are
+  // deliberately applied above only to the weather-code combinations given.
+  if(gust > 29) events.push({token:wind.token,description:`wind gusts ${gust} kt`,level:'severe'});
+
+  if(isNonPrecipitation && Number.isFinite(visibilityMetres)){
+    let level=''; let description='';
+    if(hasAirportThreshold){
+      if(visibilityMetres <= landingMinimum){
+        level='severe'; description=`visibility ${visibility.display} at or below landing minima ${landingMinimum} m`;
+      }else if(visibilityMetres <= landingMinimum + 200){
+        level='bad'; description=`visibility ${visibility.display} at or below landing minima + 200 m (${landingMinimum + 200} m)`;
+      }else if(visibilityMetres < landingMinimum + 500){
+        level='concern'; description=`visibility ${visibility.display} below landing minima + 500 m (${landingMinimum + 500} m)`;
+      }
+    }else if(visibilityMetres < 1001 || visibility.sm === 1){
+      level='severe'; description=`visibility ${visibility.display} below 1001 m / 1 SM`;
+    }else if(visibilityMetres < 1501){
+      level='bad'; description=`visibility ${visibility.display} below 1501 m`;
+    }else if(visibilityMetres <= 2001){
+      level='concern'; description=`visibility ${visibility.display} at or below 2001 m`;
+    }
+    if(level){
+      events.push({token:visibility.token,description,level});
+      // Keep the accompanying obscuration code red/bold in METAR output too:
+      // e.g. the reader should see both "1200" and "BR" or "FG".
+      weather.filter(item=>item.parts.some(part=>VISIBILITY_PHENOMENA.has(part))).forEach(item=>{
+        if(!events.some(event=>event.token===item.token)) events.push({token:item.token,description:item.description,level});
+      });
+    }
   }
-  const lowVis=visibility && ((Number.isFinite(visibility.meters) && visibility.meters <= 1500) || (Number.isFinite(visibility.sm) && visibility.sm <= 1));
-  if(lowVis && precipitation.length) events.push({token:visibility.token,description:`visibility ${visibility.display} in precipitation`,level:'bad'});
-  if(nonPrecipitationScreen){
-    const thresholdDescription=hasAirportThreshold
-      ? `below ${visibilityThreshold} m screening threshold (landing minima ${landingMinimum} m + 500 m)`
-      : 'at or below the default non-precipitation screening threshold';
-    events.push({token:visibility.token,description:`visibility ${visibility.display} ${thresholdDescription}`,level:'bad'});
+
+  // Low-cloud categories apply only in non-precipitation conditions.
+  for(const cloud of clouds){
+    if(!isNonPrecipitation) continue;
+    let level='';
+    if(['SCT','BKN','OVC'].includes(cloud.amount) && cloud.hundredsFt < 4) level='bad';
+    if(level) events.push({token:cloud.token,description:cloud.description,level});
   }
-  for(const cloud of clouds) events.push({token:cloud.token,description:cloud.description,level:'concern'});
   const level=events.reduce((current,event)=>severityRank(event.level)>severityRank(current) ? event.level : current,'');
-  return {tokens,events,level,weather,visibility,wind,clouds,nonPrecipitationScreen};
+  return {tokens,events,level,weather,visibility,wind,clouds};
 }
 
 function reportKind(report){
@@ -229,9 +261,57 @@ function tafRiskRows(report){
 function highlightMetar(report){
   const tokens=report.replace(/\s+/g,' ').trim().split(' ');
   const analysis=analyseCondition(tokens.join(' '), stationFromReport(report));
-  const hazardTokens=new Set(analysis.events.map(event=>event.token));
-  const html=tokens.map(token=>hazardTokens.has(token) ? `<span class="metar-hazard">${escapeHtml(token)}</span>` : escapeHtml(token)).join(' ');
+  const hazardLevels=new Map();
+  analysis.events.forEach(event=>{
+    const previous=hazardLevels.get(event.token);
+    if(!previous || severityRank(event.level)>severityRank(previous)) hazardLevels.set(event.token,event.level);
+  });
+  const html=tokens.map(token=>hazardLevels.has(token) ? `<span class="metar-hazard ${hazardLevels.get(token)}">${escapeHtml(token)}</span>` : escapeHtml(token)).join(' ');
   return {analysis,html};
+}
+
+function visibleTafRows(){ return activeCategory==='all' ? allTafRows : allTafRows.filter(row=>row.level===activeCategory); }
+function renderTafTable(){
+  const tafBody=$('tafBody'), rows=visibleTafRows();
+  const grouped=rows.reduce((groups,row)=>{ (groups[row.station] ||= []).push(row); return groups; },{});
+  tafBody.innerHTML=Object.entries(grouped).map(([station,stationRows])=>stationRows.map((row,index)=>`<tr class="risk-row ${row.level}">${index===0 ? `<td rowspan="${stationRows.length}"><strong>${escapeHtml(station)}</strong></td>` : ''}<td class="risk ${row.level}">${escapeHtml(row.description)}<small class="taf-source">${escapeHtml(row.source)}</small></td><td>${escapeHtml(row.window)}</td></tr>`).join('')).join('') || `<tr><td colspan="3">No ${activeCategory==='all' ? '' : `${levelLabel(activeCategory).toLowerCase()} `}TAF weather-risk windows were identified.</td></tr>`;
+  $('copyTafTable').disabled=!rows.length;
+}
+function selectCategory(category){
+  activeCategory=category;
+  document.querySelectorAll('.category-filter').forEach(button=>button.classList.toggle('active',button.dataset.category===category));
+  renderTafTable();
+}
+async function copyVisibleTafTable(){
+  const rows=visibleTafRows();
+  if(!rows.length) return;
+  const scope=activeCategory==='all' ? 'All conditions' : levelLabel(activeCategory);
+  const text=[`TAF operational risk summary — ${scope}`,'Station Name\tWeather Description\tTime Window (UTC)',...rows.map(row=>`${row.station}\t${row.description}\t${row.window}`)].join('\n');
+  // Word, Outlook and most office applications recognise text/html on the
+  // clipboard as a real table. The plain-text representation remains useful
+  // for terminals, CSV-style pastes and older browsers.
+  const html=`<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10pt"><caption style="caption-side:top;text-align:left;font-weight:bold;padding:0 0 8px">${escapeHtml(`TAF operational risk summary — ${scope}`)}</caption><thead><tr><th style="border:1px solid #777;padding:7px;text-align:left;background:#e9eef0">Station Name</th><th style="border:1px solid #777;padding:7px;text-align:left;background:#e9eef0">Weather Description</th><th style="border:1px solid #777;padding:7px;text-align:left;background:#e9eef0">Time Window (UTC)</th></tr></thead><tbody>${rows.map(row=>`<tr><td style="border:1px solid #777;padding:7px;vertical-align:top"><b>${escapeHtml(row.station)}</b></td><td style="border:1px solid #777;padding:7px;vertical-align:top">${escapeHtml(row.description)}<br><span style="color:#555;font-size:8pt">${escapeHtml(row.source)}</span></td><td style="border:1px solid #777;padding:7px;vertical-align:top;white-space:nowrap">${escapeHtml(row.window)}</td></tr>`).join('')}</tbody></table>`;
+  try{
+    if(navigator.clipboard?.write && window.ClipboardItem){
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html':new Blob([html],{type:'text/html'}),
+        'text/plain':new Blob([text],{type:'text/plain'})
+      })]);
+    }else{
+      // Legacy rich-copy fallback: selecting a real DOM table preserves its
+      // tabular structure when it is pasted into Word.
+      const holder=document.createElement('div');
+      holder.contentEditable='true'; holder.style.cssText='position:fixed;left:-9999px;top:0'; holder.innerHTML=html;
+      document.body.append(holder);
+      const selection=window.getSelection(), range=document.createRange();
+      range.selectNodeContents(holder); selection.removeAllRanges(); selection.addRange(range);
+      const copied=document.execCommand('copy');
+      selection.removeAllRanges(); holder.remove();
+      if(!copied) throw Error('Copy was not accepted by this browser.');
+    }
+    const button=$('copyTafTable'), original=button.textContent;
+    button.textContent='Copied table'; setTimeout(()=>{button.textContent=original},1600);
+  }catch(error){ $('analyzerNotice').className='analyzer-notice error'; $('analyzerNotice').textContent='Could not copy the table. Please select the table and copy it manually.'; }
 }
 
 async function render(){
@@ -247,14 +327,10 @@ async function render(){
     } else if(kind === 'METAR') metars.push({station:stationFromReport(report),report,...highlightMetar(report)});
     else errors.push('One pasted block was not recognised as a complete METAR, SPECI, or TAF.');
   }
-  const tafBody=$('tafBody');
-  const tafRowsByStation=tafRows.reduce((groups,row)=>{
-    (groups[row.station] ||= []).push(row);
-    return groups;
-  },{});
-  tafBody.innerHTML=Object.entries(tafRowsByStation).map(([station,rows])=>rows.map((row,index)=>`<tr>${index === 0 ? `<td rowspan="${rows.length}"><strong>${escapeHtml(station)}</strong></td>` : ''}<td class="risk ${row.level}">${escapeHtml(row.description)}<small class="taf-source">${escapeHtml(row.source)}</small></td><td>${escapeHtml(row.window)}</td></tr>`).join('')).join('') || '<tr><td colspan="3">No TAF weather-risk windows were identified using the configured conservative rules.</td></tr>';
+  allTafRows=tafRows;
+  renderTafTable();
   $('tafResults').hidden=!reports.some(report=>reportKind(report)==='TAF');
-  $('metarList').innerHTML=metars.map(item=>`<article class="metar-report"><header><strong>${escapeHtml(stationDisplay(item.station))}</strong><small>${item.analysis.events.length ? `${levelLabel(item.analysis.level)} groups highlighted` : 'No configured weather concern identified'}</small></header><pre class="metar-raw">${item.html}</pre></article>`).join('') || '<p class="no-findings">No METAR or SPECI reports were supplied.</p>';
+  $('metarList').innerHTML=metars.map(item=>`<article class="metar-report"><header><strong>${escapeHtml(stationDisplay(item.station))}</strong><small class="metar-level ${item.analysis.level}">${item.analysis.events.length ? `${levelLabel(item.analysis.level)} groups highlighted` : 'No configured weather concern identified'}</small></header><pre class="metar-raw">${item.html}</pre></article>`).join('') || '<p class="no-findings">No METAR or SPECI reports were supplied.</p>';
   $('metarResults').hidden=!metars.length;
   const recognised=tafRows.length + metars.length;
   $('analyzerNotice').className=`analyzer-notice${errors.length ? ' error' : ''}`;
@@ -263,3 +339,5 @@ async function render(){
 
 $('analyseWeather').addEventListener('click',render);
 $('weatherInput').addEventListener('keydown',event=>{ if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); render(); } });
+document.querySelectorAll('.category-filter').forEach(button=>button.addEventListener('click',()=>selectCategory(button.dataset.category)));
+$('copyTafTable').addEventListener('click',copyVisibleTafTable);
