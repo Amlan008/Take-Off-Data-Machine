@@ -266,7 +266,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     'wind_gust_kt': round(float(hourly.get('wind_gusts_10m', [None])[index]) * .539957, 1) if hourly.get('wind_gusts_10m', [None])[index] is not None else None,
                     'wind_direction': hourly.get('wind_direction_10m', [None])[index],
                     'precipitation_mm': hourly.get('precipitation', [None])[index],
-                    'source': 'Open-Meteo forecast model',
+                    'source': 'Open-Meteo Best Match',
                 })
             except Exception as exc:
                 return self.respond_error(f'Point weather is temporarily unavailable: {exc}', 502)
@@ -750,7 +750,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                     # burst of simultaneous upstream calls.
                     if is_open_meteo:
                         with OPEN_METEO_REQUEST_LOCK:
-                            delay = .45 - (time.time() - OPEN_METEO_LAST_REQUEST)
+                            # Keep the shared public-API traffic well below a
+                            # burst rate. The browser also serialises requests,
+                            # so this is a second guard when more than one
+                            # client uses the deployed app.
+                            delay = 1.2 - (time.time() - OPEN_METEO_LAST_REQUEST)
                             if delay > 0:
                                 time.sleep(delay)
                             with urlopen(request, timeout=30) as response:
