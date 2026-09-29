@@ -740,11 +740,12 @@ class AppHandler(SimpleHTTPRequestHandler):
                 if api_key:
                     headers['X-API-Key'] = api_key
             request = Request(url, headers=headers)
-            # Open-Meteo can throttle shared cloud egress addresses. Retry a
-            # small number of rate-limited requests instead of failing an
-            # otherwise valid forecast generation immediately.
+            # Open-Meteo can throttle shared cloud egress addresses. The
+            # browser has a direct, public-API fallback for an uncached 429,
+            # so this proxy must fail quickly rather than holding the page in
+            # a long retry loop while Render's shared IP is cooling down.
             is_open_meteo = 'open-meteo.com/' in url
-            for attempt in range(3):
+            for attempt in range(1):
                 try:
                     # Open-Meteo rate limits concurrent traffic from a shared
                     # cloud IP.  Pace *all* model requests through one short
@@ -761,6 +762,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                             if refreshed and time.time() - refreshed['saved_at'] < FRESH_CACHE_SECONDS:
                                 self.cache_state = 'HIT'
                                 return refreshed['body']
+                            if OPEN_METEO_COOLDOWN_UNTIL > time.time():
+                                raise RuntimeError('Open-Meteo HTTP Error 429: shared proxy cooldown is active.')
                             # Keep the shared public-API traffic well below a
                             # burst rate. The browser also serialises requests,
                             # so this is a second guard when more than one
@@ -787,12 +790,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                     retry_after = exc.headers.get('Retry-After')
                     # Respect an explicit upstream wait when supplied. With
                     # no header, use a modest shared cool-down so the next
-                    # queued request does not immediately repeat the 429.
-                    wait_seconds = float(retry_after) if retry_after and retry_after.isdigit() else 8 * (attempt + 1)
+                    # server-proxy request does not immediately repeat 429.
+                    wait_seconds = float(retry_after) if retry_after and retry_after.isdigit() else 20
                     if is_open_meteo:
                         OPEN_METEO_COOLDOWN_UNTIL = max(OPEN_METEO_COOLDOWN_UNTIL, time.time() + wait_seconds)
-                    if attempt == 2:
-                        raise
+                    raise
         except Exception as exc:
             # A short-lived stale forecast is safer and more useful than an
             # empty calculator when a shared cloud IP is rate-limited.
