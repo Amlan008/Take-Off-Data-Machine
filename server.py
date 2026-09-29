@@ -20,6 +20,8 @@ PROXY_CACHE = {}
 PROXY_CACHE_LOCK = threading.Lock()
 OPEN_METEO_REQUEST_LOCK = threading.Lock()
 OPEN_METEO_LAST_REQUEST = 0.0
+OPEN_METEO_COOLDOWN_UNTIL = 0.0
+OPEN_METEO_MIN_INTERVAL = 3.0
 ASH_ADVISORY_CACHE = {}
 FRESH_CACHE_SECONDS = 600
 STALE_CACHE_SECONDS = 3600
@@ -704,7 +706,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         return nearest
 
     def fetch_body(self, url):
-        global OPEN_METEO_LAST_REQUEST
+        global OPEN_METEO_LAST_REQUEST, OPEN_METEO_COOLDOWN_UNTIL
         now = time.time()
         with PROXY_CACHE_LOCK:
             cached = PROXY_CACHE.get(url)
@@ -750,11 +752,23 @@ class AppHandler(SimpleHTTPRequestHandler):
                     # burst of simultaneous upstream calls.
                     if is_open_meteo:
                         with OPEN_METEO_REQUEST_LOCK:
+                            # A request may have been completed while this
+                            # caller waited for the queue. Re-checking here
+                            # coalesces identical airport/time requests rather
+                            # than sending the same request twice upstream.
+                            with PROXY_CACHE_LOCK:
+                                refreshed = PROXY_CACHE.get(url)
+                            if refreshed and time.time() - refreshed['saved_at'] < FRESH_CACHE_SECONDS:
+                                self.cache_state = 'HIT'
+                                return refreshed['body']
                             # Keep the shared public-API traffic well below a
                             # burst rate. The browser also serialises requests,
                             # so this is a second guard when more than one
                             # client uses the deployed app.
-                            delay = 1.2 - (time.time() - OPEN_METEO_LAST_REQUEST)
+                            delay = max(
+                                OPEN_METEO_MIN_INTERVAL - (time.time() - OPEN_METEO_LAST_REQUEST),
+                                OPEN_METEO_COOLDOWN_UNTIL - time.time(),
+                            )
                             if delay > 0:
                                 time.sleep(delay)
                             with urlopen(request, timeout=30) as response:
@@ -768,10 +782,17 @@ class AppHandler(SimpleHTTPRequestHandler):
                     self.cache_state = 'MISS'
                     return body
                 except HTTPError as exc:
-                    if exc.code != 429 or attempt == 2:
+                    if exc.code != 429:
                         raise
-                    retry_after=exc.headers.get('Retry-After')
-                    time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else attempt + 1)
+                    retry_after = exc.headers.get('Retry-After')
+                    # Respect an explicit upstream wait when supplied. With
+                    # no header, use a modest shared cool-down so the next
+                    # queued request does not immediately repeat the 429.
+                    wait_seconds = float(retry_after) if retry_after and retry_after.isdigit() else 8 * (attempt + 1)
+                    if is_open_meteo:
+                        OPEN_METEO_COOLDOWN_UNTIL = max(OPEN_METEO_COOLDOWN_UNTIL, time.time() + wait_seconds)
+                    if attempt == 2:
+                        raise
         except Exception as exc:
             # A short-lived stale forecast is safer and more useful than an
             # empty calculator when a shared cloud IP is rate-limited.

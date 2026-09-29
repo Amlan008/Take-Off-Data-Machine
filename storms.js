@@ -2,11 +2,15 @@ const $=id=>document.getElementById(id),state={systems:[],airports:[],selectedId
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const num=v=>Number.isFinite(Number(v))?Number(v):null;
 async function api(url){const r=await fetch(url),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||r.statusText);return d}
-// Public Open-Meteo is deliberately used sparingly. Serialising map-marker
-// requests prevents several nearby-airport popups becoming a burst from one
-// shared server IP. Every marker request uses Open-Meteo's default Best Match.
+// Public Open-Meteo is deliberately used sparingly. The browser cache survives
+// a page refresh during a working session, while the server coalesces requests
+// from all users. Every marker request uses Open-Meteo's default Best Match.
+const WEATHER_CACHE_TTL=10*60*1000;
 let pointWeatherQueue=Promise.resolve(),lastPointWeatherRequest=0;
-function queuedPointWeather(url){const run=async()=>{const wait=Math.max(0,1800-(Date.now()-lastPointWeatherRequest));if(wait)await new Promise(resolve=>setTimeout(resolve,wait));try{return await api(url)}finally{lastPointWeatherRequest=Date.now()}};pointWeatherQueue=pointWeatherQueue.then(run,run);return pointWeatherQueue}
+function weatherSessionKey(url){return`weather-machine:storm-weather:${url}`}
+function cachedWeather(url){try{const saved=JSON.parse(sessionStorage.getItem(weatherSessionKey(url))||'null');if(saved&&Date.now()-saved.savedAt<WEATHER_CACHE_TTL)return saved.data}catch(error){}return null}
+function saveWeather(url,data){try{sessionStorage.setItem(weatherSessionKey(url),JSON.stringify({savedAt:Date.now(),data}))}catch(error){}}
+function queuedPointWeather(url){const cached=cachedWeather(url);if(cached)return Promise.resolve(cached);const run=async()=>{const wait=Math.max(0,3000-(Date.now()-lastPointWeatherRequest));if(wait)await new Promise(resolve=>setTimeout(resolve,wait));try{const data=await api(url);saveWeather(url,data);return data}finally{lastPointWeatherRequest=Date.now()}};pointWeatherQueue=pointWeatherQueue.then(run,run);return pointWeatherQueue}
 function utc(v){const d=new Date(v);return Number.isNaN(d)?v||'Not supplied':new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(d).replace(',','')+' UTC'}
 function pos(p){return `${Math.abs(p.lat).toFixed(1)}°${p.lat>=0?'N':'S'} ${Math.abs(p.lon).toFixed(1)}°${p.lon>=0?'E':'W'}`}
 function basin(s){const{lat,lon}=s.position;if(s.source==='IMD')return lon>=80?'Bay of Bengal · North Indian Ocean':'Arabian Sea · North Indian Ocean';if(s.code?.endsWith('W')||lon>=100)return'Western North Pacific Ocean';if(s.code?.endsWith('E')||lon<-100)return'Eastern North Pacific Ocean';if(lon>=-100&&lon<20&&lat>=0)return'North Atlantic Ocean';return'North Indian Ocean'}
