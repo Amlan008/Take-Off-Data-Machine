@@ -24,11 +24,11 @@
         <p>Live screen of only the airports in the landing-minima sheet that meet a Marginal, Bad, or Severe weather condition.</p>
       </header>
       <div class="metar-toolbar"><p id="metarScreenStatus" class="metar-status" aria-live="polite">Starting automated METAR screen…</p><button id="refreshMetarScreen" type="button">Refresh now</button></div>
-      <div class="metar-table-wrap"><table class="metar-table"><thead><tr><th>Observation Time (UTC)</th><th>Visibility</th><th>Raw METAR</th></tr></thead><tbody id="metarScreenBody"><tr><td colspan="3">Loading live METAR screen…</td></tr></tbody></table></div>
+      <div class="metar-table-wrap"><table class="metar-table"><thead><tr><th>Visibility</th><th>Raw METAR</th></tr></thead><tbody id="metarScreenBody"><tr><td colspan="2">Loading live METAR screen…</td></tr></tbody></table></div>
       <div class="metar-key" aria-label="Weather-category colours"><span class="concern"><i></i>Marginal</span><span class="bad"><i></i>Bad</span><span class="severe"><i></i>Severe</span></div>
       <p class="screen-note">This page refreshes automatically every 10 minutes while it remains open. Source: NOAA Aviation Weather Center. Always verify the official METAR for operational use.</p>
     </main>
     <script src="weather-analyzer.js?v=20261001-metar-page-link-v11"></script>
-    <script src="metar-analyzer.js?v=20261001-v1"></script>
+    <script src="metar-analyzer.js?v=20261001-v2"></script>
   </body>
 </html>
