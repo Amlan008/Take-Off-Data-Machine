@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 let stationNames;
 let allTafRows=[];
 let activeCategory='all';
+let landingMinima;
 
 const PHENOMENA = {
   DZ:'drizzle', RA:'rain', SN:'snow', SG:'snow grains', IC:'ice crystals', PL:'ice pellets', GR:'hail', GS:'small hail / snow pellets', UP:'unknown precipitation',
@@ -11,21 +12,55 @@ const DESCRIPTORS = {MI:'shallow', BC:'patches of', PR:'partial', DR:'drifting',
 const PRECIP = new Set(['DZ','RA','SN','SG','IC','PL','GR','GS','UP']);
 const VISIBILITY_PHENOMENA = new Set(['BR','FG','FU','DU','SA','HZ','PY']);
 const WEATHER_TOKEN = /^(?:\+|-)?(?:VC)?(?:(?:MI|BC|PR|DR|BL|SH|TS|FZ))?(?:(?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PY|PO|SQ|FC|SS|DS))+$/;
-// Airport-specific non-precipitation visibility screens. Each value is the
-// applicable landing minimum in metres; the operational screen activates only
-// below minimum + 500 m, per the user's conservative-planning rule.
-const LANDING_MINIMA_METRES = {
-  VIDP:550,VIAR:650,VILK:550,VIJP:550,VISR:1500,VILH:5000,VIJU:900,VIDN:1400,VIJO:1000,
-  VECC:550,VEBS:550,VEBN:900,VEPT:1000,VERC:1800,VEBD:800,VERP:900,VEGT:1200,
-  VABB:550,VANP:550,VABP:550,VAID:800,VAAU:900,VAAH:550,VAHS:550,VABJ:550,VAJM:550,VAUD:900,
-  VOBL:550,VOCI:550,VOTV:550,VOMM:550,VOGO:1000,VOGA:1000,VOML:750,VOCL:1000,VOKN:800,VOVI:1000,VOPB:900,
-  VNKT:2800,VGHS:1300
-};
+// Airport-specific non-precipitation visibility screens are loaded from the
+// editable CSV in assets. This deliberately keeps operational minima out of
+// the application code.
+async function loadLandingMinima(){
+  if(landingMinima) return landingMinima;
+  landingMinima=new Map();
+  try{
+    const response=await fetch('assets/landing-minima.csv');
+    if(!response.ok) throw Error(`HTTP ${response.status}`);
+    const lines=(await response.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(line=>line.trim() && !line.trim().startsWith('#'));
+    if(!lines.length) return landingMinima;
+    const headers=lines.shift().split(',').map(value=>value.trim().toLowerCase());
+    const codeIndex=headers.findIndex(value=>/^(icao|airport|station|code)$/.test(value));
+    const minimaIndex=headers.findIndex(value=>/^(landing_minima_m|landing minimum|landing_minimum)$/.test(value));
+    const cat2Index=headers.findIndex(value=>/^(cat[ -]?2|cat_?2)$/.test(value));
+    const cat3Index=headers.findIndex(value=>/^(cat[ -]?3|cat_?3)$/.test(value));
+    const noIlsIndex=headers.findIndex(value=>/^(no[ -]?ils|no_?ils)$/.test(value));
+    if(codeIndex < 0 || minimaIndex < 0) throw Error('CSV must contain ICAO and landing_minima_m columns.');
+    lines.forEach(line=>{
+      const columns=line.split(',').map(value=>value.trim());
+      const code=(columns[codeIndex] || '').toUpperCase();
+      const minimum=Number(columns[minimaIndex]);
+      const optionalMinimum=index=>index < 0 || !columns[index] ? null : Number(columns[index]);
+      if(/^[A-Z]{4}$/.test(code) && Number.isFinite(minimum) && minimum >= 0){
+        landingMinima.set(code,{
+          landingMinimum:minimum,
+          cat2:optionalMinimum(cat2Index),
+          cat3:optionalMinimum(cat3Index),
+          noIls:optionalMinimum(noIlsIndex)
+        });
+      }
+    });
+  }catch(error){
+    console.warn('Landing-minima CSV could not be loaded:',error);
+  }
+  return landingMinima;
+}
 
 function escapeHtml(value){ return String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
 function severityRank(level){ return ({concern:1,bad:2,severe:3})[level] || 0; }
 function levelLabel(level){ return ({concern:'Marginal weather',bad:'Bad weather',severe:'Severe weather'})[level] || 'Marginal weather'; }
 function unique(items){ return [...new Set(items.filter(Boolean))]; }
+function displayObservationTime(value, raw=''){
+  if(value){
+    const date=new Date(value);
+    if(!Number.isNaN(date.valueOf())) return date.toISOString().replace('T',' ').slice(0,16) + ' UTC';
+  }
+  return raw.match(/\b(\d{6}Z)\b/)?.[1] || 'Time unavailable';
+}
 
 function decodeWeather(token){
   const original=token;
@@ -92,6 +127,18 @@ function lowClouds(tokens){
   }).filter(Boolean);
 }
 
+// CAT/No-ILS values are presentation-only operational markers. The weather
+// screening thresholds continue to use landing_minima_m exclusively.
+function approachCondition(visibilityMetres, airportMinima, isNonPrecipitation){
+  if(!isNonPrecipitation || !airportMinima || !Number.isFinite(visibilityMetres)) return null;
+  const {landingMinimum,cat2,cat3,noIls}=airportMinima;
+  if(Number.isFinite(cat3) && visibilityMetres <= cat3) return {kind:'below-cat3',label:'Below CAT III minima'};
+  if(Number.isFinite(cat2) && visibilityMetres <= cat2) return {kind:'cat3',label:'CAT III conditions'};
+  if(Number.isFinite(cat2) && visibilityMetres <= landingMinimum) return {kind:'cat2',label:'CAT II conditions'};
+  if(Number.isFinite(noIls) && visibilityMetres <= noIls) return {kind:'no-ils',label:'No-ILS conditions'};
+  return null;
+}
+
 function analyseCondition(text, station=''){
   const tokens=text.trim().split(/\s+/).filter(Boolean);
   const weather=tokens.map(decodeWeather).filter(Boolean);
@@ -100,29 +147,29 @@ function analyseCondition(text, station=''){
   const clouds=lowClouds(tokens);
   const events=[];
   const precipitation=weather.filter(item=>item.precip);
-  const landingMinimum=LANDING_MINIMA_METRES[station];
+  const airportMinima=landingMinima?.get(station);
+  const landingMinimum=airportMinima?.landingMinimum;
   const hasAirportThreshold=Number.isFinite(landingMinimum);
   const visibilityMetres=visibilityInMetres(visibility);
   const gust=wind?.gust ?? -1;
   const isNonPrecipitation=Boolean(visibility) && !precipitation.length;
+  const approach=approachCondition(visibilityMetres,airportMinima,isNonPrecipitation);
   const codeIs=(item,...codes)=>codes.includes(item.token.toUpperCase());
-  const isMarginalCode=item=>codeIs(item,'-RA','DZ','-SN','-TSRA','BLDU','SHRA');
-  const isBadWindCode=item=>codeIs(item,'-RA','+SHRA','-SN','-TSRA','BLDU');
+  const isMarginalCode=item=>codeIs(item,'-RA','DZ','-SN','BLDU','SHRA');
+  const isBadCode=item=>codeIs(item,'RA','-TSRA','TSRA','DSTS','DS','TS','SN','-RA','+SHRA','-SN');
   const isHeavyCore=item=>item.intensity==='+' && (item.parts.includes('RA') || item.parts.includes('SN') || item.descriptor==='TS');
-  const isSevereDust=item=>item.parts.includes('SA') || item.parts.includes('SS') || item.parts.includes('DS');
+  const isSevereDust=item=>item.intensity==='+' && item.token.toUpperCase()==='+DSTS' || (item.parts.some(part=>['SA','SS','DS'].includes(part)) && gust >= 25);
   const isThunderstormHail=item=>item.descriptor==='TS' && (item.parts.includes('GR') || item.parts.includes('GS'));
   const isSnowTransport=item=>['DRSN','BLSN'].includes(item.token.toUpperCase());
 
-  // Explicit weather-code screens. A code is added only when its matching
-  // visibility/wind qualification is present; the highest applicable level
-  // is retained for the report/group summary.
+  // Explicit weather-code screens. The highest applicable level is retained
+  // for the report/group summary.
   for(const item of weather){
     let level='';
     if(isHeavyCore(item) || isThunderstormHail(item) || isSevereDust(item)) level='severe';
-    else if(isSnowTransport(item) && gust > 25) level='severe';
-    else if(isBadWindCode(item) && gust > 24) level='bad';
-    else if((item.parts.includes('RA') || item.parts.includes('SN') || item.descriptor==='TS') && visibilityMetres < 2000) level='bad';
-    else if(isMarginalCode(item) && gust >= 15 && gust <= 19 && visibilityMetres >= 2000) level='concern';
+    else if(isSnowTransport(item) && gust >= 25) level='severe';
+    else if(isBadCode(item)) level='bad';
+    else if(isMarginalCode(item) && gust >= 15 && gust <= 19 && visibilityMetres <= 2000) level='concern';
     if(level) events.push({token:item.token,description:item.description,level});
   }
 
@@ -133,19 +180,19 @@ function analyseCondition(text, station=''){
   if(isNonPrecipitation && Number.isFinite(visibilityMetres)){
     let level=''; let description='';
     if(hasAirportThreshold){
-      if(visibilityMetres <= landingMinimum){
-        level='severe'; description=`visibility ${visibility.display} at or below landing minima ${landingMinimum} m`;
-      }else if(visibilityMetres <= landingMinimum + 200){
-        level='bad'; description=`visibility ${visibility.display} at or below landing minima + 200 m (${landingMinimum + 200} m)`;
-      }else if(visibilityMetres < landingMinimum + 500){
-        level='concern'; description=`visibility ${visibility.display} below landing minima + 500 m (${landingMinimum + 500} m)`;
+      if(visibilityMetres <= landingMinimum - 100){
+        level='severe'; description=`visibility ${visibility.display} at or below landing minima −100 m (${landingMinimum - 100} m)`;
+      }else if(visibilityMetres <= landingMinimum){
+        level='bad'; description=`visibility ${visibility.display} at or below landing minima ${landingMinimum} m`;
+      }else if(visibilityMetres < landingMinimum + 200){
+        level='concern'; description=`visibility ${visibility.display} below landing minima +200 m (${landingMinimum + 200} m)`;
       }
-    }else if(visibilityMetres < 1001 || visibility.sm === 1){
-      level='severe'; description=`visibility ${visibility.display} below 1001 m / 1 SM`;
-    }else if(visibilityMetres < 1501){
-      level='bad'; description=`visibility ${visibility.display} below 1501 m`;
-    }else if(visibilityMetres <= 2001){
-      level='concern'; description=`visibility ${visibility.display} at or below 2001 m`;
+    }else if(visibilityMetres < 1001 || (Number.isFinite(visibility.sm) && visibility.sm <= .5)){
+      level='severe'; description=`visibility ${visibility.display} below 1001 m / at or below 0.5 SM`;
+    }else if(visibilityMetres < 1500 || (Number.isFinite(visibility.sm) && visibility.sm <= 1)){
+      level='bad'; description=`visibility ${visibility.display} below 1500 m / at or below 1 SM`;
+    }else if(visibilityMetres >= 1500 && visibilityMetres <= 1800){
+      level='concern'; description=`visibility ${visibility.display} in the 1500–1800 m marginal range`;
     }
     if(level){
       events.push({token:visibility.token,description,level});
@@ -161,11 +208,11 @@ function analyseCondition(text, station=''){
   for(const cloud of clouds){
     if(!isNonPrecipitation) continue;
     let level='';
-    if(['SCT','BKN','OVC'].includes(cloud.amount) && cloud.hundredsFt < 4) level='bad';
+    if(['SCT','BKN','OVC'].includes(cloud.amount) && cloud.hundredsFt <= 3) level='bad';
     if(level) events.push({token:cloud.token,description:cloud.description,level});
   }
   const level=events.reduce((current,event)=>severityRank(event.level)>severityRank(current) ? event.level : current,'');
-  return {tokens,events,level,weather,visibility,wind,clouds};
+  return {tokens,events,level,weather,visibility,wind,clouds,approach};
 }
 
 function reportKind(report){
@@ -232,11 +279,15 @@ function groupStart(raw){
   const range=raw.match(/(\d{4})\/(\d{4})/); return range?.[1] || '';
 }
 
-function describeEvents(events){ return unique(events.map(event=>event.description)).join('; '); }
+function describeEvents(events,approach){
+  const descriptions=unique(events.map(event=>event.description));
+  if(approach && !descriptions.includes(approach.label)) descriptions.push(approach.label);
+  return descriptions.join('; ');
+}
 function tafRiskRows(report){
   const parsed=tafGroups(report);
   if(parsed.error) return {rows:[],error:parsed.error};
-  let previous={events:[],level:''};
+  let previous={events:[],level:'',approach:null};
   const rows=[];
   parsed.groups.forEach(group=>{
     const analysed=analyseCondition(group.content, parsed.station);
@@ -245,13 +296,13 @@ function tafRiskRows(report){
     if(group.type === 'BECMG'){
       const targetRank=severityRank(analysed.level), previousRank=severityRank(previous.level);
       if(targetRank < previousRank && previous.events.length){
-        rows.push({station:parsed.station,description:`${describeEvents(previous.events)} · improving BECMG, conservatively retained until ${timeLabel(group.end)} UTC`,source,window:windowLabel(group.start,group.end),level:previous.level});
+        rows.push({station:parsed.station,description:`${describeEvents(previous.events,previous.approach)} · improving BECMG, conservatively retained until ${timeLabel(group.end)} UTC`,source,window:windowLabel(group.start,group.end),level:previous.level,approach:previous.approach});
       } else if(target.length){
-        rows.push({station:parsed.station,description:`${describeEvents(target)} · deteriorating BECMG, planning from ${timeLabel(group.start)} UTC`,source,window:windowLabel(group.start,group.end),level:analysed.level});
+        rows.push({station:parsed.station,description:`${describeEvents(target,analysed.approach)} · deteriorating BECMG, planning from ${timeLabel(group.start)} UTC`,source,window:windowLabel(group.start,group.end),level:analysed.level,approach:analysed.approach});
       }
     } else if(target.length){
       const qualifier=group.type === 'TEMPO' ? 'Temporary' : group.type.startsWith('PROB') ? `${group.type.replace('TEMPO','').trim()} probability` : group.type === 'FM' ? 'From' : 'Prevailing';
-      rows.push({station:parsed.station,description:`${qualifier.toLowerCase()} ${describeEvents(target)}`,source,window:windowLabel(group.start,group.end),level:analysed.level});
+      rows.push({station:parsed.station,description:`${qualifier.toLowerCase()} ${describeEvents(target,analysed.approach)}`,source,window:windowLabel(group.start,group.end),level:analysed.level,approach:analysed.approach});
     }
     if(group.type !== 'TEMPO' && !group.type.startsWith('PROB')) previous=analysed;
   });
@@ -271,10 +322,11 @@ function highlightMetar(report){
 }
 
 function visibleTafRows(){ return activeCategory==='all' ? allTafRows : allTafRows.filter(row=>row.level===activeCategory); }
+function approachBadge(approach){ return approach ? `<span class="approach-badge ${escapeHtml(approach.kind)}">${escapeHtml(approach.label)}</span>` : ''; }
 function renderTafTable(){
   const tafBody=$('tafBody'), rows=visibleTafRows();
   const grouped=rows.reduce((groups,row)=>{ (groups[row.station] ||= []).push(row); return groups; },{});
-  tafBody.innerHTML=Object.entries(grouped).map(([station,stationRows])=>stationRows.map((row,index)=>`<tr class="risk-row ${row.level}">${index===0 ? `<td rowspan="${stationRows.length}"><strong>${escapeHtml(station)}</strong></td>` : ''}<td class="risk ${row.level}">${escapeHtml(row.description)}<small class="taf-source">${escapeHtml(row.source)}</small></td><td>${escapeHtml(row.window)}</td></tr>`).join('')).join('') || `<tr><td colspan="3">No ${activeCategory==='all' ? '' : `${levelLabel(activeCategory).toLowerCase()} `}TAF weather-risk windows were identified.</td></tr>`;
+  tafBody.innerHTML=Object.entries(grouped).map(([station,stationRows])=>stationRows.map((row,index)=>`<tr class="risk-row ${row.level}${row.approach ? ` approach-${row.approach.kind}` : ''}">${index===0 ? `<td rowspan="${stationRows.length}"><strong>${escapeHtml(station)}</strong></td>` : ''}<td class="risk ${row.level}">${escapeHtml(row.description)}${approachBadge(row.approach)}<small class="taf-source">${escapeHtml(row.source)}</small></td><td>${escapeHtml(row.window)}</td></tr>`).join('')).join('') || `<tr><td colspan="3">No ${activeCategory==='all' ? '' : `${levelLabel(activeCategory).toLowerCase()} `}TAF weather-risk windows were identified.</td></tr>`;
   $('copyTafTable').disabled=!rows.length;
 }
 function selectCategory(category){
@@ -316,7 +368,7 @@ async function copyVisibleTafTable(){
 
 async function render(){
   const reports=splitReports($('weatherInput').value);
-  await loadStationNames();
+  await Promise.all([loadStationNames(),loadLandingMinima()]);
   const tafRows=[]; const metars=[]; const errors=[];
   for(const report of reports){
     const kind=reportKind(report);
@@ -330,14 +382,16 @@ async function render(){
   allTafRows=tafRows;
   renderTafTable();
   $('tafResults').hidden=!reports.some(report=>reportKind(report)==='TAF');
-  $('metarList').innerHTML=metars.map(item=>`<article class="metar-report"><header><strong>${escapeHtml(stationDisplay(item.station))}</strong><small class="metar-level ${item.analysis.level}">${item.analysis.events.length ? `${levelLabel(item.analysis.level)} groups highlighted` : 'No configured weather concern identified'}</small></header><pre class="metar-raw">${item.html}</pre></article>`).join('') || '<p class="no-findings">No METAR or SPECI reports were supplied.</p>';
+  $('metarList').innerHTML=metars.map(item=>`<article class="metar-report${item.analysis.approach ? ` approach-${item.analysis.approach.kind}` : ''}"><header><strong>${escapeHtml(stationDisplay(item.station))}</strong><span>${approachBadge(item.analysis.approach)}<small class="metar-level ${item.analysis.level}">${item.analysis.events.length ? `${levelLabel(item.analysis.level)} groups highlighted` : 'No configured weather concern identified'}</small></span></header><pre class="metar-raw">${item.html}</pre></article>`).join('') || '<p class="no-findings">No METAR or SPECI reports were supplied.</p>';
   $('metarResults').hidden=!metars.length;
   const recognised=tafRows.length + metars.length;
   $('analyzerNotice').className=`analyzer-notice${errors.length ? ' error' : ''}`;
   $('analyzerNotice').textContent=errors.length ? `${recognised ? 'Analysis completed. ' : ''}${errors.join(' ')}` : `Analysis completed: ${tafRows.length} TAF risk window${tafRows.length===1?'':'s'} and ${metars.length} METAR / SPECI report${metars.length===1?'':'s'} processed.`;
 }
 
-$('analyseWeather').addEventListener('click',render);
-$('weatherInput').addEventListener('keydown',event=>{ if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); render(); } });
-document.querySelectorAll('.category-filter').forEach(button=>button.addEventListener('click',()=>selectCategory(button.dataset.category)));
-$('copyTafTable').addEventListener('click',copyVisibleTafTable);
+if($('analyseWeather')){
+  $('analyseWeather').addEventListener('click',render);
+  $('weatherInput').addEventListener('keydown',event=>{ if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); render(); } });
+  document.querySelectorAll('.category-filter').forEach(button=>button.addEventListener('click',()=>selectCategory(button.dataset.category)));
+  $('copyTafTable').addEventListener('click',copyVisibleTafTable);
+}

@@ -7,6 +7,7 @@ from io import BytesIO
 from zipfile import ZipFile
 from xml.etree import ElementTree
 from html import unescape
+import csv
 import json
 import math
 import os
@@ -23,6 +24,10 @@ OPEN_METEO_LAST_REQUEST = 0.0
 OPEN_METEO_COOLDOWN_UNTIL = 0.0
 OPEN_METEO_MIN_INTERVAL = 3.0
 ASH_ADVISORY_CACHE = {}
+METAR_ANALYZER_CACHE = {'saved_at': 0.0, 'records': [], 'error': ''}
+METAR_ANALYZER_CACHE_LOCK = threading.Lock()
+METAR_ANALYZER_REFRESH_LOCK = threading.Lock()
+METAR_ANALYZER_REFRESH_SECONDS = 600
 FRESH_CACHE_SECONDS = 600
 STALE_CACHE_SECONDS = 3600
 
@@ -47,6 +52,65 @@ ICAO_AIRPORTS = {
     if len(str(airport.get('icao', '')).strip()) == 4
 }
 AIRPORT_LIST = [airport for matches in IATA_AIRPORTS.values() for airport in matches]
+
+def metar_analyzer_icaos():
+    """Read the editable landing-minima CSV; it is the sole live screen list."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'landing-minima.csv')
+    try:
+        with open(path, encoding='utf-8-sig', newline='') as file:
+            rows = (line for line in file if line.strip() and not line.lstrip().startswith('#'))
+            return sorted({str(row.get('icao', '')).strip().upper() for row in csv.DictReader(rows)
+                           if re.fullmatch(r'[A-Z]{4}', str(row.get('icao', '')).strip().upper())
+                           and str(row.get('landing_minima_m', '')).strip()})
+    except (OSError, csv.Error):
+        return []
+
+def refresh_metar_analyzer_cache(force=False):
+    """Fetch all configured stations once and retain only the latest report."""
+    now = time.time()
+    with METAR_ANALYZER_CACHE_LOCK:
+        cached = dict(METAR_ANALYZER_CACHE)
+    if not force and cached['records'] and now - cached['saved_at'] < METAR_ANALYZER_REFRESH_SECONDS:
+        return cached
+    if not METAR_ANALYZER_REFRESH_LOCK.acquire(blocking=False):
+        return cached
+    try:
+        icaos = metar_analyzer_icaos()
+        if not icaos:
+            raise RuntimeError('No valid airports were found in assets/landing-minima.csv.')
+        url = 'https://aviationweather.gov/api/data/metar?' + urlencode({
+            'ids': ','.join(icaos), 'format': 'json', 'hours': 6
+        })
+        request = Request(url, headers={'User-Agent': 'TakeoffDataMachine-METARAnalyzer/1.0'})
+        with urlopen(request, timeout=35) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+        latest = {}
+        for item in payload if isinstance(payload, list) else []:
+            icao = str(item.get('icaoId') or item.get('icao') or '').upper()
+            raw = str(item.get('rawOb') or item.get('raw') or item.get('raw_text') or '').strip()
+            observation_time = item.get('obsTime') or item.get('receiptTime') or ''
+            if icao in icaos and raw and (icao not in latest or str(observation_time) > str(latest[icao]['observation_time'])):
+                latest[icao] = {
+                    'icao': icao,
+                    'raw': raw,
+                    'observation_time': observation_time,
+                }
+        result = {'saved_at': now, 'records': [latest[icao] for icao in sorted(latest)], 'error': ''}
+        with METAR_ANALYZER_CACHE_LOCK:
+            METAR_ANALYZER_CACHE.update(result)
+            return dict(METAR_ANALYZER_CACHE)
+    except Exception as exc:
+        with METAR_ANALYZER_CACHE_LOCK:
+            METAR_ANALYZER_CACHE['error'] = str(exc)
+            return dict(METAR_ANALYZER_CACHE)
+    finally:
+        METAR_ANALYZER_REFRESH_LOCK.release()
+
+def metar_analyzer_refresh_loop():
+    """Keep one cached batch current while this web-service process is awake."""
+    while True:
+        refresh_metar_analyzer_cache()
+        time.sleep(METAR_ANALYZER_REFRESH_SECONDS)
 
 class AppHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
@@ -78,6 +142,14 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == '/api/metar-analyzer':
+            cache = refresh_metar_analyzer_cache()
+            return self.respond_json({
+                'source': 'NOAA Aviation Weather Center',
+                'refreshed_at': datetime.fromtimestamp(cache['saved_at'], timezone.utc).isoformat().replace('+00:00', 'Z') if cache['saved_at'] else '',
+                'records': cache['records'],
+                'warning': cache['error'],
+            })
         if parsed.path == '/api/verification/skills':
             airport = parse_qs(parsed.query).get('icao', [''])[0].upper()
             if not re.fullmatch(r'[A-Z]{4}', airport):
@@ -825,6 +897,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '4174'))
     print(f'Take-off Data Machine running at http://127.0.0.1:{port}')
+    threading.Thread(target=metar_analyzer_refresh_loop, name='metar-analyzer-refresh', daemon=True).start()
 # Public hosts route internet traffic to the port supplied in PORT. Binding to
 # all interfaces retains local use while allowing Render (or another host) to
 # reach this server after deployment.
