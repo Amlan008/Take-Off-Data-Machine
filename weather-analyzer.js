@@ -106,6 +106,15 @@ function parseVisibility(tokens){
   }
   return null;
 }
+function parseRvr(tokens){
+  return tokens.map(token=>{
+    const match=token.match(/^R(\d{2}[LCR]?)\/(M|P)?(\d{4})(?:V(M|P)?\d{4})?(FT)?[UDN]?$/);
+    if(!match) return null;
+    const metres=Number(match[3]) * (match[5] ? .3048 : 1);
+    const qualifier=match[2] === 'M' ? '< ' : match[2] === 'P' ? '> ' : '';
+    return {token,runway:match[1],metres,display:`RVR ${match[1]} ${qualifier}${match[3]}${match[5] ? ' ft' : ' m'}`};
+  }).filter(Boolean);
+}
 function visibilityInMetres(visibility){
   if(!visibility) return Number.NaN;
   if(Number.isFinite(visibility.meters)) return visibility.meters;
@@ -143,6 +152,7 @@ function analyseCondition(text, station=''){
   const tokens=text.trim().split(/\s+/).filter(Boolean);
   const weather=tokens.map(decodeWeather).filter(Boolean);
   const visibility=parseVisibility(tokens);
+  const rvrs=parseRvr(tokens);
   const wind=parseWind(tokens);
   const clouds=lowClouds(tokens);
   const events=[];
@@ -212,7 +222,7 @@ function analyseCondition(text, station=''){
     if(level) events.push({token:cloud.token,description:cloud.description,level});
   }
   const level=events.reduce((current,event)=>severityRank(event.level)>severityRank(current) ? event.level : current,'');
-  return {tokens,events,level,weather,visibility,wind,clouds,approach};
+  return {tokens,events,level,weather,visibility,rvrs,wind,clouds,approach};
 }
 
 function reportKind(report){
