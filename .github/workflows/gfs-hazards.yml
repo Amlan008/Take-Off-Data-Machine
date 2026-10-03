@@ -1,0 +1,39 @@
+name: Build global aviation hazard layers
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Allow time for each 00/06/12/18 UTC GFS cycle to become available.
+    - cron: '17 2,8,14,20 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gfs-hazards
+  cancel-in-progress: false
+
+jobs:
+  build-hazard-layers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install GRIB decoding support
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libeccodes0
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-gfs-hazards.txt
+      - name: Build latest GFS diagnostic layers
+        run: python scripts/build_gfs_hazards.py
+      - name: Commit generated map layers
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add assets/gfs-hazards
+          git diff --cached --quiet || git commit -m 'Update GFS aviation hazard layers'
+          git push
