@@ -1,5 +1,7 @@
 const map = L.map('hazardMap', { worldCopyJump: true, minZoom: 2 }).setView([18, 20], 2);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 8, attribution: '© OpenStreetMap contributors © CARTO' }).addTo(map);
+// Use the same dependable, key-free basemap as the cyclone and ash maps.
+// The previous provider started serving an "API key required" watermark.
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 8, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
 
 const layerSelect = document.querySelector('#hazardLayer');
 const timeSelect = document.querySelector('#hazardTime');
@@ -80,12 +82,24 @@ async function showGfsLayer() {
       marker.bindPopup(makePopup({ wind: kt(point.wind_kt), direction: Number.isFinite(point.wind_from_deg) ? `${Math.round(point.wind_from_deg)}°` : '—', temperature: celsius(point.temperature_c), relative_humidity: Number.isFinite(point.relative_humidity) ? `${Math.round(point.relative_humidity)}%` : '—', valid: data.properties?.valid_time, flight_level: `FL${data.properties?.flight_level}` }, 'GFS wind / temperature'));
     } else {
       const score = Number(point[`${layer}_score`]);
-      marker = L.circleMarker([latitude, longitude], { radius: 4.5, color: scoreColor(score), fillColor: scoreColor(score), fillOpacity: .72, weight: 1 });
+      // Each downloaded value represents a roughly 4° × 4° sampled GFS cell.
+      // Render a softly blended cell, rather than a dot, so the layer reads as
+      // a continuous area of potential and not a collection of observations.
+      const color = scoreColor(score);
+      const opacity = score >= .67 ? .56 : score >= .35 ? .39 : .18;
+      marker = L.rectangle([[latitude - 2, longitude - 2], [latitude + 2, longitude + 2]], {
+        color,
+        weight: score >= .67 ? 1 : .35,
+        opacity: score >= .67 ? .82 : .42,
+        fillColor: color,
+        fillOpacity: opacity,
+        interactive: true,
+      });
       marker.bindPopup(makePopup({ potential: scoreLabel(score), score: Number.isFinite(score) ? score.toFixed(2) : '—', wind: kt(point.wind_kt), temperature: celsius(point.temperature_c), relative_humidity: Number.isFinite(point.relative_humidity) ? `${Math.round(point.relative_humidity)}%` : '—', valid: data.properties?.valid_time, flight_level: `FL${data.properties?.flight_level}` }, `GFS ${layer} potential`));
     }
     displayed.addLayer(marker);
   });
-  setStatus(`GFS ${layer} diagnostic loaded: ${features.length} sampled grid points.`);
+  setStatus(`GFS ${layer} diagnostic loaded: ${features.length} gridded diagnostic cells.`);
 }
 
 async function drawMap() {
