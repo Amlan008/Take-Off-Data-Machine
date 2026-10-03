@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Global Aviation Hazards Map · Weather machine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=20261003" />
+    <link rel="stylesheet" href="dark-theme.css?v=20261003" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+      .hazard-shell{max-width:1240px;margin:auto;padding:60px 42px 80px}.hazard-header{border-bottom:1px solid var(--ink);padding-bottom:18px}.hazard-header h1{margin:12px 0 0;font:400 clamp(44px,6vw,78px)/.95 'Libre Baskerville',Georgia,serif;letter-spacing:-.06em;color:var(--ink)}.hazard-header h1 em{font:inherit;color:var(--lime)}.hazard-header p{max-width:830px;margin:15px 0 0;color:var(--muted);font-size:14px;line-height:1.6}.hazard-controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;padding:18px 0}.hazard-controls label{display:grid;gap:6px;font:500 10px 'DM Mono',monospace;letter-spacing:.07em;color:var(--muted)}.hazard-controls select,.hazard-controls button{min-height:38px;border:1px solid var(--line);background:#17242a;color:var(--ink);padding:8px 11px;font:500 12px 'DM Mono',monospace}.hazard-controls button{border:0;background:var(--lime);color:#142019;font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer}.hazard-controls button:hover{background:#a6cde2}.hazard-status{flex:1 1 250px;min-height:20px;margin:0 0 8px;color:var(--muted);font-size:11px;line-height:1.45}.hazard-status.error{color:#ff8b85}.hazard-layout{display:grid;grid-template-columns:minmax(0,1fr) 288px;gap:18px}.hazard-map-panel{border:1px solid var(--line);background:#111b20}.hazard-map-top{display:flex;justify-content:space-between;gap:12px;padding:11px 14px;border-bottom:1px solid var(--line)}.hazard-map-top strong{font-size:13px}.hazard-map-top small{color:var(--muted);font:10px 'DM Mono',monospace}#hazardMap{height:650px;background:#172a32}.hazard-side{border:1px solid var(--line);background:#141f25;padding:18px}.hazard-side h2{margin:5px 0 9px;font-size:22px}.hazard-side p{margin:0;color:var(--muted);font-size:12px;line-height:1.55}.hazard-key{list-style:none;padding:0;margin:16px 0 0;border-top:1px solid var(--line)}.hazard-key li{display:flex;gap:8px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:12px;line-height:1.45}.hazard-key i{display:block;flex:0 0 12px;width:12px;height:12px;border-radius:50%;margin-top:2px}.hazard-key b{display:block;font:500 10px 'DM Mono',monospace;letter-spacing:.07em}.hazard-note{margin-top:30px;padding:15px;border-left:3px solid var(--lime);background:rgba(30,49,49,.7);color:var(--muted);font-size:12px;line-height:1.6}.hazard-catalogue{margin-top:30px;padding-top:24px;border-top:1px solid var(--ink)}.hazard-catalogue h2{margin:5px 0 16px;font-size:27px}.hazard-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line)}.hazard-grid article{padding:16px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#141f25}.hazard-grid h3{margin:0 0 7px;font-size:15px}.hazard-grid p{margin:0;color:var(--muted);font-size:12px;line-height:1.55}.hazard-popup b{display:block;margin-bottom:4px}.hazard-popup span{display:block;margin-top:3px}.wind-arrow{background:transparent;border:0;color:#d7edf8;font:700 18px/1 'DM Sans',sans-serif;text-shadow:0 1px 3px #000}.sigmet-shape{fill-opacity:.25;stroke-width:2}.leaflet-control-attribution{font-size:9px}@media(max-width:860px){.hazard-layout{grid-template-columns:1fr}.hazard-side{display:grid;grid-template-columns:1fr 1fr;gap:18px}.hazard-side h2{grid-column:1/-1}}@media(max-width:620px){.hazard-shell{padding:38px 20px}.hazard-controls label,.hazard-controls select{width:100%}#hazardMap{height:500px}.hazard-side{display:block}.hazard-grid{grid-template-columns:1fr}.hazard-map-top{align-items:start;flex-direction:column}}
+    </style>
+  </head>
+  <body>
+    <main class="hazard-shell">
+      <header class="hazard-header">
+        <div class="eyebrow"><span></span> GLOBAL AVIATION WEATHER GUIDANCE</div>
+        <nav class="app-nav" aria-label="Application sections"><a href="index.html">Home</a><a href="aerodrome-forecast.html">Aerodrome Forecast</a><a href="storms.html">Storm systems</a><a href="ash.html">Volcanic Ash Advisories</a><a href="weather-analyzer.html">Weather Analyzer</a><a class="active" href="wafs.html">Global Hazards Map</a></nav>
+        <h1>Global Aviation<br /><em>Hazards Map</em></h1>
+        <p>Native interactive map of official active SIGMETs and GFS-derived global flight-weather diagnostics. Select a forecast valid time, flight level and layer, then click the map for detail.</p>
+      </header>
+      <section class="hazard-controls" aria-label="Map controls">
+        <label>MAP LAYER<select id="hazardLayer"><option value="sigmet">Official SIGMETs</option><option value="turbulence">GFS turbulence potential</option><option value="icing">GFS icing potential</option><option value="wind">GFS wind / temperature</option><option value="convection">GFS convection potential</option></select></label>
+        <label>FORECAST VALID TIME<select id="hazardTime" disabled><option>Loading…</option></select></label>
+        <label>FLIGHT LEVEL<select id="hazardLevel" disabled><option>Loading…</option></select></label>
+        <button id="hazardRefresh" type="button">Refresh map</button>
+        <p id="hazardStatus" class="hazard-status" aria-live="polite">Loading local hazard layers…</p>
+      </section>
+      <section class="hazard-layout">
+        <div class="hazard-map-panel"><div class="hazard-map-top"><strong id="mapTitle">Official active SIGMETs</strong><small id="mapMeta">Worldwide · GeoJSON</small></div><div id="hazardMap" aria-label="Global aviation hazards map"></div></div>
+        <aside class="hazard-side"><div><span class="section-label">LAYER GUIDE</span><h2 id="guideTitle">Official SIGMETs</h2><p id="guideText">Current international and domestic aviation warnings shown as issuing-agency polygons. Click a polygon for its bulletin information.</p></div><ul id="hazardKey" class="hazard-key"></ul></aside>
+      </section>
+      <p class="hazard-note"><b>Operational use.</b> SIGMETs are official warnings. The GFS turbulence, icing and convection layers are model-derived diagnostics, not official aviation forecasts or WAFS products. They are intended for broad situational awareness and must be checked against current SIGMETs, PIREPs/AIREPs, volcanic-ash products, NOTAMs and company procedures.</p>
+      <section class="hazard-catalogue"><span class="section-label">DATA STATUS</span><h2>What is displayed</h2><div class="hazard-grid"><article><h3>Official SIGMETs</h3><p>Worldwide current aviation-warning polygons obtained during the scheduled build and retained as same-origin GeoJSON.</p></article><article><h3>GFS turbulence</h3><p>Potential based on wind speed, horizontal wind gradient and vertical wind shear. It does not identify a guaranteed turbulence type.</p></article><article><h3>GFS icing</h3><p>Potential based on flight-level temperature and relative humidity. It is not an official airframe-icing forecast.</p></article><article><h3>GFS wind / temperature</h3><p>Sampled upper-air wind and temperature values at the selected flight level.</p></article><article><h3>GFS convection</h3><p>Potential based on CAPE and total cloud cover. Consult official convective products for operations.</p></article><article><h3>Update cycle</h3><p>Layers are generated from the latest available 00, 06, 12 and 18 UTC GFS cycle by GitHub Actions.</p></article></div></section>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="wafs.js?v=20261003gfs"></script>
+  </body>
+</html>
