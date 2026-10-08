@@ -449,6 +449,61 @@ class AppHandler(SimpleHTTPRequestHandler):
                 return self.respond_error('Coordinates are outside the valid range.', 400)
             fields['hourly'] = ALLOWED_HOURLY
             return self.proxy(host + '?' + urlencode(fields))
+        if parsed.path == '/api/open-meteo/grid':
+            # A bounded multi-coordinate endpoint for the interactive model
+            # explorer. Keep its allowlists separate from the airport proxy.
+            q = parse_qs(parsed.query)
+            model = q.get('model', [''])[0]
+            allowed_models = {
+                'best_match', 'ecmwf_ifs04', 'gfs_global',
+                'icon_global', 'icon_eu', 'icon_d2', 'hrrr_conus', 'nam_conus',
+            }
+            if model not in allowed_models:
+                return self.respond_error('Choose a supported Open-Meteo global or regional model.', 400)
+            try:
+                latitudes = [float(value) for value in q.get('latitude', [''])[0].split(',')]
+                longitudes = [float(value) for value in q.get('longitude', [''])[0].split(',')]
+            except ValueError:
+                return self.respond_error('Provide valid map-grid coordinates.', 400)
+            if not latitudes or len(latitudes) != len(longitudes) or len(latitudes) > 81:
+                return self.respond_error('The map grid must contain 1–81 matching coordinate pairs.', 400)
+            if any(not -90 <= value <= 90 for value in latitudes) or any(not -180 <= value <= 180 for value in longitudes):
+                return self.respond_error('Map-grid coordinates are outside the valid range.', 400)
+            surface_fields = {
+                'temperature_2m', 'relative_humidity_2m', 'dew_point_2m',
+                'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m',
+                'pressure_msl', 'precipitation', 'cloud_cover', 'cloud_cover_low',
+                'cloud_cover_mid', 'cloud_cover_high', 'cape',
+                'convective_inhibition', 'freezing_level_height',
+            }
+            pressure_field = re.compile(
+                r'(temperature|relative_humidity|wind_speed|wind_direction|'
+                r'geopotential_height|vertical_velocity)_(1000|925|850|700|600|'
+                r'500|400|300|250|200|150|100)hPa'
+            )
+            requested = q.get('hourly', [''])[0].split(',')
+            if not requested or len(requested) > 6 or any(
+                field not in surface_fields and not pressure_field.fullmatch(field)
+                for field in requested
+            ):
+                return self.respond_error('The requested map parameters are not supported.', 400)
+            try:
+                forecast_days = min(3, max(1, int(q.get('forecast_days', ['3'])[0])))
+            except ValueError:
+                return self.respond_error('forecast_days must be between 1 and 3.', 400)
+            fields = {
+                'latitude': ','.join(f'{value:.3f}' for value in latitudes),
+                'longitude': ','.join(f'{value:.3f}' for value in longitudes),
+                'hourly': ','.join(requested),
+                'forecast_days': forecast_days,
+                'timezone': 'GMT',
+                'wind_speed_unit': 'kn',
+            }
+            # Omitting models selects Open-Meteo's Best Match, which can vary
+            # across locations; explicit model selection uses the exact model.
+            if model != 'best_match':
+                fields['models'] = model
+            return self.proxy('https://api.open-meteo.com/v1/forecast?' + urlencode(fields))
         return super().do_GET()
 
     def proxy(self, url):
