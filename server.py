@@ -344,6 +344,68 @@ class AppHandler(SimpleHTTPRequestHandler):
                 })
             except Exception as exc:
                 return self.respond_error(f'Point weather is temporarily unavailable: {exc}', 502)
+        if parsed.path == '/api/storms/airport-weather':
+            # One Best Match request supplies the selected hour for a small
+            # group of screened airports. This keeps the map from generating
+            # one upstream request every time an airport marker is opened.
+            q = parse_qs(parsed.query)
+            latitudes = q.get('latitude', [''])[0].split(',')
+            longitudes = q.get('longitude', [''])[0].split(',')
+            date_value = q.get('date', [''])[0]
+            if not latitudes or len(latitudes) != len(longitudes) or len(latitudes) > 25:
+                return self.respond_error('Provide matching batches of 1 to 25 airport coordinates.', 400)
+            try:
+                coordinates = [(float(lat), float(lon)) for lat, lon in zip(latitudes, longitudes)]
+                datetime.strptime(date_value, '%Y-%m-%d')
+            except ValueError:
+                return self.respond_error('Provide valid airport coordinates and a UTC date.', 400)
+            if any(not (-90 <= lat <= 90 and -180 <= lon <= 180) for lat, lon in coordinates):
+                return self.respond_error('Airport coordinates are outside the valid range.', 400)
+            fields = {
+                'latitude': ','.join(str(lat) for lat, _ in coordinates),
+                'longitude': ','.join(str(lon) for _, lon in coordinates),
+                'hourly': 'wind_speed_10m,wind_gusts_10m,precipitation',
+                'start_date': date_value,
+                'end_date': date_value,
+                'timezone': 'UTC',
+            }
+            try:
+                payload = self.fetch_json('https://api.open-meteo.com/v1/forecast?' + urlencode(fields))
+                return self.respond_json(payload)
+            except Exception as exc:
+                return self.respond_error(f'Airport weather batch is temporarily unavailable: {exc}', 502)
+        if parsed.path == '/api/storms/spatial-weather':
+            # A compact 9x9 hourly grid is requested only when the user turns
+            # on a spatial map layer. Keep the full upstream URL cacheable.
+            q = parse_qs(parsed.query)
+            latitudes = q.get('latitude', [''])[0].split(',')
+            longitudes = q.get('longitude', [''])[0].split(',')
+            date_value = q.get('date', [''])[0]
+            model = q.get('model', ['best_match'])[0]
+            allowed_models = {'best_match', 'ecmwf_ifs', 'ncep_gfs_global'}
+            if not latitudes or len(latitudes) != len(longitudes) or len(latitudes) > 81:
+                return self.respond_error('Provide matching spatial-grid coordinates (maximum 81).', 400)
+            if model not in allowed_models:
+                return self.respond_error('Choose Best Match, ECMWF IFS HRES, or NOAA GFS Global.', 400)
+            try:
+                coordinates = [(float(lat), float(lon)) for lat, lon in zip(latitudes, longitudes)]
+                datetime.strptime(date_value, '%Y-%m-%d')
+            except ValueError:
+                return self.respond_error('Provide valid spatial-grid coordinates and a UTC date.', 400)
+            if any(not (-90 <= lat <= 90 and -180 <= lon <= 180) for lat, lon in coordinates):
+                return self.respond_error('Spatial-grid coordinates are outside the valid range.', 400)
+            fields = {
+                'latitude': ','.join(str(lat) for lat, _ in coordinates),
+                'longitude': ','.join(str(lon) for _, lon in coordinates),
+                'hourly': 'wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation',
+                'start_date': date_value,
+                'end_date': date_value,
+                'timezone': 'UTC',
+                'wind_speed_unit': 'kn',
+            }
+            if model != 'best_match':
+                fields['models'] = model
+            return self.proxy('https://api.open-meteo.com/v1/forecast?' + urlencode(fields))
         if parsed.path == '/api/storms/imd':
             # IMD exposes the track, wind-warning fields and uncertainty cone
             # independently. Returning one same-origin bundle keeps browser
