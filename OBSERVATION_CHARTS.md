@@ -41,8 +41,12 @@ are saved in `soundings.json` for future Skew-T tools. Dew point is T minus the
 reported dew-point depression (`tdMan`/`tdSigT`/`tdTrop`); RH is derived over liquid
 water. Missing exact map levels are log-pressure interpolated only with <=200 hPa
 bracketing gaps and explicitly labelled; no extrapolation is allowed. Original
-profile levels are kept separately. Skew-T displays and typed fronts/air-mass
-movement are not yet implemented. No credentials are required by these feeds.
+profile levels are kept separately. The upper-air map now opens observed Skew-T
+profiles from a station popup or the Soundings button, with station selection,
+T/Td traces, wind barbs and reported-value table. Missing data break the traces;
+large pressure gaps are not bridged. The chart includes reference dry/moist
+adiabats and mixing ratios, but no parcel trace, CAPE/CIN or forecast profiles.
+No credentials are required by these feeds.
 Missing sounding coordinates are completed from the current NOAA IGRA WMO
 station inventory where the available coordinates agree; the location source
 is retained in each observation. Inconsistent launch timestamps are omitted.
@@ -164,8 +168,25 @@ coverage-mask edges and poleward of 75°. These limits deliberately leave gaps.
   not jet-system propagation; maxima are analysed values, not exact jet cores.
 - Potential fronts: aligned temperature AND dew-point gradients ≥1.5 °C/100 km,
   cyclonic shear ≥0.8×10⁻⁵ s⁻¹ or convergence ≥0.5×10⁻⁵ s⁻¹, pressure-trough
-  anomaly ≤−0.8 hPa and at least 250 km continuous length. No cold/warm/
-  stationary/occluded classification is asserted in this first version.
+  anomaly ≤−0.8 hPa and at least 250 km continuous length. Temporal candidates
+  compare the latest strictly older snapshot 6–18 hours earlier, on compatible
+  grids supported by both analyses. Missing or ambiguous matches stay unclassified.
+  A cold candidate requires normal advance toward warmer air >5 kt, agreeing
+  normal flow >2 kt, and cooling at the previous boundary ≥1 °C. Warm candidates
+  reverse these signs. Stationary candidates require normal movement/flow ≤5 kt
+  and temperature change <2 °C. All require ≥2 °C thermal contrast.
+  Occlusion candidates additionally require previous cold/warm arms within
+  300 km, a low within 400 km, cooler surface temperatures on both sides of a
+  warm tongue, and a ≥2 °C warm tongue at 850 hPa supported by ≥3 nearby soundings
+  per sampling region. This deliberately restrictive heuristic can miss fronts;
+  no official frontal analysis is claimed. Surface heating and 12-hour temporal
+  aliasing can still mislead classification.
+- Air-mass layer: wind-guided thermal and dew-point advection from supported
+  gradients, together with actual T/Td changes over the comparison interval.
+  Sparse red/blue arrows depict warming/cooling advection, not Lagrangian parcel
+  tracks or maritime/continental source attribution. Only |thermal or dew-point
+  advection| ≥2 °C/day and wind 2–50 m/s qualify. Arrow lengths show a capped
+  two-hour wind-guided indicator, not displacement over the snapshot interval.
 - Cyclonic systems: pressure low with ≥6 actual wind reports in ≥3 quadrants
   100–600 km away; ≥70% have cyclonic tangential winds, mean tangential speed
   >2 m/s. A nearby detected front supports a **possible extratropical** label.
@@ -183,8 +204,8 @@ soundings, marine measurement differences and reduction errors still matter.
 Non-detection does not establish absence. Fronts/thermal cyclone types may be
 unavailable if moisture or vertical evidence is insufficient.
 
-Surface diagnostics follow three-hour cycles; upper-air/jet diagnostics follow
-the nominal 00/12 UTC soundings. For archived snapshots:
+Surface and upper-air diagnostics follow the nominal 00/12 UTC snapshots.
+For archived snapshots:
 `python scripts/build_observation_charts.py --reprocess --diagnostics-only`.
 Older snapshots without stored dew point cannot gain it through reprocessing;
 fresh upstream data are needed. No database, model background or new API key

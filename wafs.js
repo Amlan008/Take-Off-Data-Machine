@@ -8,6 +8,7 @@
   const diagnostics = L.layerGroup().addTo(map);
   let featureData = null;
   const featureColors = { high:'#165aba',low:'#b92535',trough:'#b92535',ridge:'#165aba',front:'#d57213',jet:'#742bc1',cyclone:'#96500d',tropical:'#b5267d',extratropical:'#4f458f' };
+  const frontColors={cold:'#175eb1',warm:'#c52935',stationary:'#7e4c91',occluded:'#8e36a8',unclassified:'#d57213'};
   const palette = ['#54318c','#315bc4','#26a6cd','#69c6a1','#e5df59','#f49c35','#d74735','#901a44'];
   const pressurePalette = ['#b2182b','#ef8a62','#fddbc7','#f7f7f7','#d1e5f0','#67a9cf','#2166ac'];
   let shadeOpacity = .52;
@@ -74,6 +75,7 @@
     result += '</p><p>' + coords[1].toFixed(2) + '°, ' + coords[0].toFixed(2) + '°</p>';
     if (p.location_source) result += '<p>Location: ' + esc(p.location_source) + '</p>';
     if (p.supplement_sources?.length) result += '<p>Same-time supplementary values: ' + esc([...new Set(p.supplement_sources)].join(', ')) + '</p>';
+    if (p.level_hpa) result += '<button type="button" data-sounding-station="'+esc(p.station)+'" data-lat="'+coords[1]+'" data-lon="'+coords[0]+'">Open observed Skew-T</button>';
     return result + '</div>';
   }
   function renderStations() {
@@ -102,10 +104,10 @@
     const selected=new Set([...document.querySelectorAll('[data-feature]:checked')].flatMap((input)=>input.dataset.feature.split(',')));
     const features=featureData.features.filter((f)=>selected.has(f.properties.feature_type));
     const counts={}; for (const feature of features) counts[feature.properties.feature_type]=(counts[feature.properties.feature_type]||0)+1;
-    $('diagnosticStatus').textContent='Experimental · '+features.length+' features: '+(Object.entries(counts).map(([type,count])=>type+' '+count).join(' · ')||'insufficient qualifying evidence')+($('chartKind').value==='surface' && featureData.properties?.status?.startsWith('No dew') ? ' · Dew point missing: fronts unavailable.' : '')+($('chartKind').value==='upper' && !['300','250','200'].includes($('chartLevel').value) ? ' · Jets: select 300, 250 or 200 hPa.' : '');
+    $('diagnosticStatus').textContent='Experimental · '+features.length+' features: '+(Object.entries(counts).map(([type,count])=>type+' '+count).join(' · ')||'insufficient qualifying evidence')+($('chartKind').value==='surface' && featureData.properties?.status?.startsWith('No dew') ? ' · Dew point missing: fronts unavailable.' : '')+($('chartKind').value==='upper' && !['300','250','200'].includes($('chartLevel').value) ? ' · Jets: select 300, 250 or 200 hPa.' : '')+($('chartKind').value==='surface' ? ' · '+(featureData.properties?.temporal_status||'Temporal diagnostics not yet published for this chart.') : '');
     for (const feature of features) {
-      const p=feature.properties,color=featureColors[p.feature_type]||'#555';
-      const detail='<div class="obs-popup"><b>'+esc(p.label)+'</b><p>'+utc(featureData.properties.valid_time)+'<br>Experimental diagnostic · '+esc(p.confidence)+' support'+(p.level_hpa ? '<br>'+p.level_hpa+' hPa' : '')+'<br>'+p.observation_count+' surrounding reports · nearest '+p.nearest_observation_km+' km</p><p>'+(p.evidence||[]).map(esc).join('<br>')+'</p>'+(p.central_pressure_hpa ? '<p>Central analysed pressure: '+fmt(p.central_pressure_hpa,'hPa')+'</p>' : '')+(p.maximum_wind_kt ? '<p>Maximum analysed wind: '+fmt(p.maximum_wind_kt,'kt')+'</p>' : '')+'</div>';
+      const p=feature.properties,color=p.feature_type==='front' ? frontColors[p.front_type||'unclassified'] : p.feature_type==='airmass' ? (p.warming?'#bc3430':'#176ba8') : featureColors[p.feature_type]||'#555';
+      const detail='<div class="obs-popup"><b>'+esc(p.label)+'</b><p>'+utc(featureData.properties.valid_time)+'<br>Experimental diagnostic · '+esc(p.confidence)+' support'+(p.level_hpa ? '<br>'+p.level_hpa+' hPa' : '')+(p.observation_count!=null ? '<br>'+p.observation_count+' surrounding reports · nearest '+p.nearest_observation_km+' km' : '')+(p.previous_time ? '<br>Previous: '+utc(p.previous_time)+' · '+p.comparison_hours+' h comparison' : '')+'</p><p>'+(p.evidence||[]).map(esc).join('<br>')+'</p>'+(p.central_pressure_hpa ? '<p>Central analysed pressure: '+fmt(p.central_pressure_hpa,'hPa')+'</p>' : '')+(p.maximum_wind_kt ? '<p>Maximum analysed wind: '+fmt(p.maximum_wind_kt,'kt')+'</p>' : '')+'</div>';
       if (feature.geometry.type==='Point') {
         const [lon,lat]=feature.geometry.coordinates,shift=360*Math.round((map.getCenter().lng-lon)/360);
         const symbol={high:'H',low:'L',cyclone:'C?',tropical:'WC?',extratropical:'ET?'}[p.feature_type];
@@ -113,8 +115,20 @@
         const offset=['high','low'].includes(p.feature_type)?0:24;
         L.marker([lat,lon+shift],{originalLongitude:lon,zIndexOffset:1000,icon:L.divIcon({className:'synoptic-symbol',html:'<span style="color:'+color+';position:relative;left:'+offset+'px">'+symbol+'<small>'+ (offset===0 && p.central_pressure_hpa ? Math.round(p.central_pressure_hpa) : '')+'</small></span>',iconSize:[50,45],iconAnchor:[15,15]})}).bindPopup(detail).addTo(diagnostics);
       } else {
-        for (const shift of [-360,0,360]) L.geoJSON(feature,{coordsToLatLng:(c)=>L.latLng(c[1],c[0]+shift),style:{color,weight:p.feature_type==='jet'?3.5:2.8,dashArray:p.feature_type==='jet'?null:'9 6',smoothFactor:.15},onEachFeature:(_,line)=>{line.bindPopup(detail);line.bindTooltip(p.label+(p.maximum_wind_kt?' · '+Math.round(p.maximum_wind_kt)+' kt':''),{className:'feature-label',sticky:true});}}).addTo(diagnostics);
-        if (p.feature_type==='jet' && Number.isFinite(p.wind_to_deg)) {
+        for (const shift of [-360,0,360]) L.geoJSON(feature,{coordsToLatLng:(c)=>L.latLng(c[1],c[0]+shift),style:{color,weight:p.feature_type==='jet'?3.5:2.8,dashArray:['jet','airmass'].includes(p.feature_type)||(p.feature_type==='front'&&p.front_type&&p.front_type!=='unclassified')?null:'9 6',smoothFactor:.15},onEachFeature:(_,line)=>{line.bindPopup(detail);line.bindTooltip(p.label+(p.maximum_wind_kt?' · '+Math.round(p.maximum_wind_kt)+' kt':''),{className:'feature-label',sticky:true});}}).addTo(diagnostics);
+        if (p.feature_type==='front' && p.front_type && p.front_type!=='unclassified') {
+          const line=feature.geometry.coordinates; let last=null,symbolIndex=0;
+          for (let i=1;i<line.length-1;i++) {
+            const [lon,lat]=line[i],shift=360*Math.round((map.getCenter().lng-lon)/360),pixel=map.latLngToContainerPoint([lat,lon+shift]);
+            if(last && pixel.distanceTo(last)<70)continue;
+            last=pixel;
+            const type=p.front_type,triangle='<path d="M10 3L3 15H17Z" fill="'+(type==='stationary'?'#175eb1':color)+'"/>',semi='<path d="M3 14A7 7 0 0 1 17 14Z" fill="'+(type==='stationary'?'#c52935':color)+'"/>';
+            const angle=(p.normal_to_warm_deg||0)+(type==='warm'?180:type==='stationary'&&symbolIndex%2?180:0);
+            let glyph=type==='cold'?triangle:type==='warm'?semi:type==='stationary'?(symbolIndex%2?semi:triangle):(symbolIndex%2?semi:triangle);symbolIndex++;
+            L.marker([lat,lon+shift],{originalLongitude:lon,icon:L.divIcon({className:'station-plot',html:'<svg width="20" height="20"><g transform="rotate('+angle+' 10 10)">'+glyph+'</g></svg>',iconSize:[20,20],iconAnchor:[10,10]})}).bindPopup(detail).addTo(diagnostics);
+          }
+        }
+        if (['jet','airmass'].includes(p.feature_type) && Number.isFinite(p.wind_to_deg)) {
           const line=feature.geometry.coordinates,[lon,lat]=line[Math.floor(line.length/2)],shift=360*Math.round((map.getCenter().lng-lon)/360);
           L.marker([lat,lon+shift],{originalLongitude:lon,zIndexOffset:1000,icon:L.divIcon({className:'station-plot',html:'<svg width="28" height="28"><path d="M14 2L5 20L14 15L23 20Z" fill="'+color+'" stroke="white" transform="rotate('+p.wind_to_deg+' 14 14)"/></svg>',iconSize:[28,28],iconAnchor:[14,14]})}).bindPopup(detail).addTo(diagnostics);
         }
@@ -154,6 +168,7 @@
     return cache.get(url);
   }
   async function draw() {
+    $('openSoundings').hidden = $('chartKind').value !== 'upper';
     guide();
     const id = ++requestId, kind = $('chartKind').value, chosen = entries().find((entry) => entry.path === $('chartTime').value);
     if (!chosen) { points = []; activeBands = null; featureData=null; diagnostics.clearLayers(); stations.clearLayers(); contours.clearLayers(); shading.clearLayers(); renderDiagnostics(); $('chartSummary').textContent = ''; setStatus('No ' + kind + ' chart has been published yet.', true); return; }
@@ -233,6 +248,22 @@
     finally { loadingManifest = false; }
   }
   $('chartKind').addEventListener('change', changeKind);
+  let soundingRequest=0;
+  async function openSounding(station,latitude,longitude) {
+    const chosen=entries().find(entry=>entry.path===$('chartTime').value);
+    if($('chartKind').value!=='upper'||!chosen)return;
+    const id=++soundingRequest,version=manifest.generated_at;
+    try {
+      const data=await json('upper/'+chosen.path+'/soundings.json');
+      if(id!==soundingRequest||$('chartKind').value!=='upper'||$('chartTime').value!==chosen.path||manifest.generated_at!==version)return;
+      window.SoundingPlot.open(data,station,latitude,longitude);
+    } catch(error) {setStatus('Sounding profile unavailable for this chart. Run the upgraded workflow to publish full profiles. '+error.message,true);}
+  }
+  $('openSoundings').addEventListener('click',()=>openSounding());
+  $('observationMap').addEventListener('click',(event)=>{
+    const button=event.target.closest('[data-sounding-station]');if(!button)return;
+    openSounding(button.dataset.soundingStation,Number(button.dataset.lat),Number(button.dataset.lon));
+  });
   $('shadeTransparency').addEventListener('input', (event) => {
     shadeOpacity = 1 - Number(event.target.value) / 100;
     $('shadeTransparencyValue').textContent = event.target.value + '%';

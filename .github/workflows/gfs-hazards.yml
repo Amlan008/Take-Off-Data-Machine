@@ -35,6 +35,7 @@ jobs:
         run: |
           python scripts/test_observation_charts.py
           python scripts/test_synoptic_features.py
+          python scripts/test_temporal_diagnostics.py
       - name: Build surface, upper-air and synoptic diagnostics
         shell: bash
         env:

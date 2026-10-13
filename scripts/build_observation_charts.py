@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 from synoptic_features import diagnose, wind_components
+from temporal_diagnostics import enrich_temporal
 UTC = timezone.utc
 LEVELS = (925, 850, 800, 700, 600, 500, 400, 300, 250, 200, 150, 100)
 MADIS = 'https://madis-data.ncep.noaa.gov/madisPublic1/data/point/'
@@ -521,6 +522,25 @@ def sounding_context(output, target):
     return rows
 
 
+def previous_surface(output, target):
+    """Latest strictly older compatible snapshot, never the current rebuild."""
+    path=output/'manifest.json'
+    if not path.exists(): return None, [], None, None
+    entries=json.loads(path.read_text()).get('surface', [])
+    eligible=[entry for entry in entries if 6*3600 <= (target-datetime.fromisoformat(entry['valid_time'])).total_seconds() <= 18*3600]
+    if not eligible: return None, [], None, None
+    entry=max(eligible,key=lambda item:item['valid_time']); folder=output/'surface'/entry['path']
+    try:
+        features=json.loads((folder/'features.geojson').read_text())
+        rows=[]
+        for f in json.loads((folder/'observations.geojson').read_text())['features']:
+            lon,lat=f['geometry']['coordinates']; rows.append(dict(f['properties'],latitude=lat,longitude=lon))
+        wind_components(rows)
+        return features, rows, diagnostic_grids(rows,'surface'), entry['valid_time']
+    except (OSError,ValueError,KeyError):
+        return None, [], None, None
+
+
 def build_chart(output, kind, target, rows, errors, upper_context=None, diagnostics_only=False, contours_only=False):
     stamp = target.strftime('%Y%m%d%H')
     folder = output / kind / stamp
@@ -540,8 +560,12 @@ def build_chart(output, kind, target, rows, errors, upper_context=None, diagnost
             write_json(folder / 'temperature.geojson', contours(rows, 'temperature_c', TEMPERATURE_INTERVAL, 1500, temperature))
             write_json(folder / 'temperature-shading.geojson', temperature_shading(temperature, 1500))
         if not contours_only:
-            diagnostic = diagnose(rows, diagnostic_grids(rows, kind), kind, smooth=smooth_line,
+            grids=diagnostic_grids(rows, kind)
+            diagnostic = diagnose(rows, grids, kind, smooth=smooth_line,
                                   upper_rows=upper_context if upper_context is not None else sounding_context(output, target), valid_time=iso(target))
+            previous, previous_rows, previous_grids, previous_time=previous_surface(output,target)
+            diagnostic=enrich_temporal(diagnostic,rows,grids,previous,previous_rows,previous_grids,iso(target),previous_time,
+                                       upper_context if upper_context is not None else sounding_context(output,target))
             diagnostic['properties']['valid_time'] = iso(target)
             write_json(folder / 'features.geojson', diagnostic)
     else:
@@ -656,7 +680,7 @@ def main():
                 updated.append(result)
                 print(f'Reprocessed {kind} {entry["path"]}: {len(rows)} reports', flush=True)
             manifest[kind] = updated
-        manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=1)
+        manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=2)
         write_json(path, manifest)
         return
     surface = datetime.fromisoformat(args.surface_time).replace(tzinfo=UTC) if args.surface_time else slot(now, 12, CHART_DELAY_MINUTES)
@@ -686,7 +710,7 @@ def main():
     surface_rows, upper_rows = deduplicate(surface_rows, surface), deduplicate(upper_rows, upper)
     path = args.output / 'manifest.json'
     previous = json.loads(path.read_text()) if path.exists() else {}
-    manifest = {'version': 1, 'analysis_version': 2, 'diagnostics_version': 1, 'generated_at': iso(now), 'pressure_policy': policy,
+    manifest = {'version': 1, 'analysis_version': 2, 'diagnostics_version': 2, 'generated_at': iso(now), 'pressure_policy': policy,
                 'levels_hpa': list(LEVELS), 'surface': previous.get('surface', []), 'upper': previous.get('upper', [])}
     succeeded = []
     for kind, target, rows, errors, minimum in [('surface', surface, surface_rows, surface_errors, 100), ('upper', upper, upper_rows, upper_errors, 30)]:

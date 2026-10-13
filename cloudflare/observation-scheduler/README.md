@@ -42,8 +42,9 @@ log-pressure interpolated only across <=200 hPa bracketing gaps and explicitly
 marked. No extrapolation is performed. Dew point is decoded from NOAA's reported
 dew-point depression. RH is derived relative to liquid water and marked as derived.
 
-These are prerequisites, not implemented Skew-T or classified-front displays.
-Existing front diagnostics remain **unclassified candidates**. Cold/warm/
-occluded/stationary classification and air-mass movement need temporal tracking,
-thermal/moisture contrasts and supporting winds; humidity alone cannot establish
-them. Two daily snapshots provide limited temporal resolution.
+Skew-T displays now use these profiles. Front classification and air-mass
+advection compare compatible snapshots with common observation support. All
+front types are experimental candidates; ambiguous cases remain unclassified.
+Humidity alone never establishes a front. Advection arrows are wind-guided
+diagnostics, not parcel trajectories. Two daily snapshots limit temporal accuracy.
+See OBSERVATION_CHARTS.md for thresholds and verification limits.
