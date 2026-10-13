@@ -3,9 +3,9 @@ name: Build surface and upper-air observation charts
 on:
   workflow_dispatch:
   schedule:
-    # Publish each three-hour surface slot after reports have arrived.
-    # The builder also refreshes the latest nominal 00/12 UTC sounding chart.
-    - cron: '47 1,4,7,10,13,16,19,22 * * *'
+    # User-selected UTC triggers. 09:15 is not in the requested schedule.
+    # GitHub may delay/drop scheduled events; these are requested start times.
+    - cron: '15 0,3,6,12,15,18,21 * * *'
 
 permissions:
   contents: write
@@ -32,11 +32,55 @@ jobs:
           python scripts/test_observation_charts.py
           python scripts/test_synoptic_features.py
       - name: Build surface, upper-air and synoptic diagnostics
-        run: python scripts/build_observation_charts.py
+        shell: bash
+        run: |
+          # Early feeds may not be published yet. Retry a failed/incomplete
+          # build once, without adding extra scheduled trigger times. Preserve
+          # partial successful updates if the other chart type is still late.
+          chart_available=0
+          for attempt in 1 2; do
+            if python scripts/build_observation_charts.py; then
+              chart_available=1
+              if python -c 'import json,sys; d=json.load(open("assets/observation-charts/manifest.json")); sys.exit(0 if all(d.get("last_build", {}).get(k, {}).get("updated", False) for k in ("surface", "upper")) else 1)'; then
+                exit 0
+              fi
+              echo "::warning::One chart type has insufficient early observations; retaining its previous chart."
+            fi
+            if [ "$attempt" -eq 1 ]; then
+              echo "Chart build failed or incomplete; retrying in 10 minutes."
+              sleep 600
+            fi
+          done
+          if [ "$chart_available" -eq 1 ]; then
+            echo "::warning::Publishing the successfully updated chart types; other charts remain at their last valid times."
+            exit 0
+          fi
+          echo "::error::Chart build failed after both attempts. Previous published charts were retained."
+          exit 1
       - name: Commit generated observation charts
+        shell: bash
+        env:
+          CHART_BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add assets/observation-charts
-          git diff --cached --quiet || git commit -m 'Update surface and upper-air observation charts'
-          git push
+          if git diff --cached --quiet; then
+            echo "No chart changes to publish."
+            exit 0
+          fi
+          git commit -m 'Update surface and upper-air observation charts'
+          # User uploads can advance the branch while the chart job runs.
+          # Rebase only our generated commit; stop on conflicts rather than
+          # overwriting remote changes or force-pushing.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:$CHART_BRANCH"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              git pull --rebase origin "$CHART_BRANCH"
+              sleep 5
+            fi
+          done
+          echo "::error::Unable to publish chart commit after three attempts."
+          exit 1

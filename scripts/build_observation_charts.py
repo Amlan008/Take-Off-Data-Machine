@@ -39,6 +39,7 @@ DWD = 'https://opendata.dwd.de/weather/weather_reports/synoptic/international/'
 KT = 1.94384449
 PRESSURE_INTERVAL = 1
 TEMPERATURE_INTERVAL = 1
+CHART_DELAY_MINUTES = 15
 
 
 def prepare_surface_pressure(rows):
@@ -316,10 +317,14 @@ def synop_urls(target):
     return sorted(set(urls))
 
 
-def retrieve(target, kind, decoder, errors):
+def retrieve(target, kind, decoder, errors, now=None):
     rows = []
+    current_hour = (now or datetime.now(UTC)).replace(minute=0, second=0, microsecond=0)
     for offset in (-1, 0, 1):
         hour = target + timedelta(hours=offset)
+        if hour > current_hour:
+            errors.append(f'{kind} {hour:%d/%H}: later hourly file not yet due at build time; early-cycle coverage is partial')
+            continue
         url = MADIS + f'{kind}/netcdf/{hour:%Y%m%d_%H}00.gz'
         try:
             rows.extend(decoder(fetch(url), target))
@@ -571,8 +576,8 @@ def main():
         manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=1)
         write_json(path, manifest)
         return
-    surface = datetime.fromisoformat(args.surface_time).replace(tzinfo=UTC) if args.surface_time else slot(now, 3, 75)
-    upper = datetime.fromisoformat(args.upper_time).replace(tzinfo=UTC) if args.upper_time else slot(now, 12, 95)
+    surface = datetime.fromisoformat(args.surface_time).replace(tzinfo=UTC) if args.surface_time else slot(now, 3, CHART_DELAY_MINUTES)
+    upper = datetime.fromisoformat(args.upper_time).replace(tzinfo=UTC) if args.upper_time else slot(now, 12, CHART_DELAY_MINUTES)
     if surface.minute or surface.hour % 3 or upper.minute or upper.hour % 12:
         parser.error('Surface times must be 00/03/06/09/12/15/18/21 UTC; upper-air times 00/12 UTC.')
     surface_errors, upper_errors = [], []
@@ -612,6 +617,10 @@ def main():
         print(f'{kind}: {entry["valid_time"]}, {len(rows)} observations, sources={entry["sources"]}, feed errors={len(errors)}')
     if not succeeded:
         raise RuntimeError('No current chart could be generated. Previously published charts were retained.')
+    manifest['last_build'] = {
+        'surface': {'target_time': iso(surface), 'updated': 'surface' in succeeded, 'feed_errors': surface_errors},
+        'upper': {'target_time': iso(upper), 'updated': 'upper' in succeeded, 'feed_errors': upper_errors},
+    }
     # Manifest is replaced last, so the browser never discovers unfinished data.
     write_json(args.output / 'manifest.tmp.json', manifest)
     (args.output / 'manifest.tmp.json').replace(path)

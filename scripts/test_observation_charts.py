@@ -5,6 +5,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import json
+import os
+import subprocess
+import textwrap
 
 import eccodes as ec
 import numpy as np
@@ -16,7 +21,98 @@ spec.loader.exec_module(charts)
 TIME = datetime(2026, 10, 13, 3, tzinfo=timezone.utc)
 
 
+def workflow_script(step_name):
+    source = (Path(__file__).resolve().parents[1] / '.github/workflows/gfs-hazards.yml').read_text()
+    section = source.split('      - name: ' + step_name + '\n', 1)[1].split('      - name:', 1)[0]
+    return textwrap.dedent(section.split('        run: |\n', 1)[1])
+
+
+def simulate_workflow_script(script, state):
+    """Run the actual workflow Bash with isolated fake Python/Git/sleep tools."""
+    with tempfile.TemporaryDirectory() as directory:
+        folder = Path(directory)
+        bin_folder = folder / 'bin'
+        bin_folder.mkdir()
+        state_file = folder / 'state.json'
+        state_file.write_text(json.dumps(state))
+        fake = '''#!/usr/bin/env python3
+import json,sys
+from pathlib import Path
+p=Path('state.json'); d=json.loads(p.read_text()); name=Path(sys.argv[0]).name; args=sys.argv[1:]; code=0
+if name=='python':
+    if args and args[0]=='scripts/build_observation_charts.py':
+        index=d.get('build_calls',0); d['build_calls']=index+1
+        attempt=d['builds'][index]; d['ready']=attempt['ready']; code=attempt['exit']
+    else: code=0 if d.get('ready') else 1
+elif name=='git':
+    d.setdefault('git_calls',[]).append(args)
+    if args[0]=='diff': code=1 if d.get('changed',True) else 0
+    elif args[0]=='push':
+        index=d.get('push_calls',0); d['push_calls']=index+1; code=d['pushes'][index]
+    elif args[0]=='pull': code=d.get('pull_exit',0)
+else: d['sleep_calls']=d.get('sleep_calls',0)+1
+p.write_text(json.dumps(d)); sys.exit(code)
+'''
+        for name in ('python', 'git', 'sleep'):
+            executable = bin_folder / name
+            executable.write_text(fake)
+            executable.chmod(0o755)
+        env = dict(os.environ, PATH=str(bin_folder) + os.pathsep + os.environ['PATH'], CHART_BRANCH='main')
+        result = subprocess.run(['bash', '-e', '-o', 'pipefail'], input=script, text=True,
+                                cwd=folder, env=env, capture_output=True)
+        return result, json.loads(state_file.read_text())
+
+
 class ObservationTests(unittest.TestCase):
+    def test_workflow_retry_preserves_partial_success(self):
+        script = workflow_script('Build surface, upper-air and synoptic diagnostics')
+        complete, partial, failed = {'exit':0,'ready':True}, {'exit':0,'ready':False}, {'exit':1,'ready':False}
+        for attempts, expected in (([complete],0),([failed,complete],0),([partial,complete],0),
+                                   ([partial,partial],0),([partial,failed],0),([failed,failed],1)):
+            result, state = simulate_workflow_script(script, {'builds':attempts})
+            self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+            self.assertEqual(state['build_calls'],len(attempts))
+            self.assertEqual(state.get('sleep_calls',0), len(attempts)-1)
+
+    def test_workflow_push_retry_is_non_destructive(self):
+        script = workflow_script('Commit generated observation charts')
+        for pushes, pull_exit, expected in (([0],0,0),([1,0],0,0),([1,1,1],0,1),([1],1,1)):
+            result, state = simulate_workflow_script(script, {'pushes':pushes,'pull_exit':pull_exit})
+            self.assertEqual(result.returncode,expected,result.stdout + result.stderr)
+            self.assertEqual(state['push_calls'],len(pushes))
+            self.assertFalse(any('--force' in arg or arg=='-f' for call in state['git_calls'] for arg in call))
+            for call in state['git_calls']:
+                if call[0]=='pull': self.assertEqual(call,['pull','--rebase','origin','main'])
+        result, state = simulate_workflow_script(script, {'changed':False,'pushes':[]})
+        self.assertEqual(result.returncode,0)
+        self.assertNotIn('push_calls',state)
+
+    def test_requested_quarter_past_triggers_select_current_surface_cycle(self):
+        self.assertEqual(charts.CHART_DELAY_MINUTES, 15)
+        for hour in (0, 3, 6, 12, 15, 18, 21):
+            start = TIME.replace(hour=hour, minute=15)
+            self.assertEqual(charts.slot(start, 3, charts.CHART_DELAY_MINUTES), start.replace(minute=0))
+        before = TIME.replace(hour=0, minute=14)
+        self.assertEqual(charts.slot(before, 3, charts.CHART_DELAY_MINUTES),
+                         (before - timedelta(days=1)).replace(hour=21, minute=0))
+
+    def test_new_nominal_sounding_cycle_is_attempted_at_quarter_past(self):
+        for hour in (0, 12):
+            start = TIME.replace(hour=hour, minute=15)
+            self.assertEqual(charts.slot(start, 12, charts.CHART_DELAY_MINUTES), start.replace(minute=0))
+        before = TIME.replace(hour=12, minute=14)
+        self.assertEqual(charts.slot(before, 12, charts.CHART_DELAY_MINUTES), before.replace(hour=0, minute=0))
+
+    def test_early_build_does_not_download_future_hourly_files(self):
+        errors = []
+        with patch.object(charts, 'fetch', return_value=b'fixture') as fetch:
+            result = charts.retrieve(TIME, 'metar', lambda payload, target: [payload], errors,
+                                     now=TIME + timedelta(minutes=15))
+        self.assertEqual(len(result), 2)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertTrue(any('later hourly file not yet due' in error for error in errors))
+        self.assertFalse(any('04' in call.args[0].rsplit('/', 1)[-1].split('_')[1][:2] for call in fetch.call_args_list))
+
     def test_mslp_qnh_quality_and_time_are_kept_distinct(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'observations.nc'
