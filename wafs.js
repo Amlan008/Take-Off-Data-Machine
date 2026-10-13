@@ -9,11 +9,15 @@
   let featureData = null;
   const featureColors = { high:'#165aba',low:'#b92535',trough:'#b92535',ridge:'#165aba',front:'#d57213',jet:'#742bc1',cyclone:'#96500d',tropical:'#b5267d',extratropical:'#4f458f' };
   const palette = ['#54318c','#315bc4','#26a6cd','#69c6a1','#e5df59','#f49c35','#d74735','#901a44'];
+  const pressurePalette = ['#b2182b','#ef8a62','#fddbc7','#f7f7f7','#d1e5f0','#67a9cf','#2166ac'];
+  let shadeOpacity = .52;
+  const activePalette = () => $('chartField').value === 'pressure' ? pressurePalette : palette;
   let colorRange = [0,40], activeBands = null;
   function fieldColor(value) {
-    const position = Math.max(0,Math.min(1,(value-colorRange[0])/(colorRange[1]-colorRange[0]))) * (palette.length-1);
-    const index = Math.min(palette.length-2,Math.floor(position)), ratio = position-index;
-    const ca = palette[index], cb = palette[index+1];
+    const colors = activePalette();
+    const position = Math.max(0,Math.min(1,(value-colorRange[0])/(colorRange[1]-colorRange[0]))) * (colors.length-1);
+    const index = Math.min(colors.length-2,Math.floor(position)), ratio = position-index;
+    const ca = colors[index], cb = colors[index+1];
         return '#' + [1,3,5].map((offset) => Math.round(parseInt(ca.slice(offset,offset+2),16) * (1-ratio) + parseInt(cb.slice(offset,offset+2),16) * ratio).toString(16).padStart(2,'0')).join('');
   }
   function updateColorScale() {
@@ -128,8 +132,10 @@
     const field = $('chartField').value, upper = $('chartKind').value === 'upper', level = Number($('chartLevel').value);
     const title = { pressure: 'Surface mean sea-level pressure', height: level + ' hPa geopotential height', wind: upper ? level + ' hPa observed wind' : 'Observed surface wind', temperature: upper ? level + ' hPa temperature' : 'Surface air temperature' }[field];
     const interval = field === 'pressure' ? '1 hPa isobars' : field === 'height' ? (level >= 700 ? '30' : level === 500 ? '60' : '120') + ' m height contours' : field === 'temperature' ? '1 °C isotherms' : 'Half barb 5 kt · full barb 10 kt · flag 50 kt';
-    const colorbar = ['temperature','pressure'].includes(field) ? '<div style="height:12px;margin-top:7px;background:linear-gradient(to right,' + palette.join(',') + ')"></div><div style="display:flex;justify-content:space-between;gap:5px">' + [0,.25,.5,.75,1].map((fraction) => '<span>' + (colorRange[0]+fraction*(colorRange[1]-colorRange[0])).toFixed(0) + '</span>').join('') + '</div><div>View-adaptive scale · ' + unit() + '</div>' : '';
-    $('chartLegend').innerHTML = '<b>' + title + '</b>' + interval + colorbar + '<br>Black: land / radiosonde<br>Blue: marine observations<br>Offshore: extended interpolation<br>Blank: insufficient observation support' + (field === 'pressure' ? '<br>Includes labelled QNH-derived estimates' : '');
+    const colored = ['temperature','pressure'].includes(field);
+    const colorbar = colored ? '<div style="height:12px;margin-top:7px;background:linear-gradient(to right,' + activePalette().join(',') + ')"></div><div style="display:flex;justify-content:space-between;gap:5px">' + [0,.25,.5,.75,1].map((fraction) => '<span>' + (colorRange[0]+fraction*(colorRange[1]-colorRange[0])).toFixed(0) + '</span>').join('') + '</div><div>View-adaptive scale · ' + unit() + '</div>' : '';
+    $('chartLegend').innerHTML = '<b>' + title + '</b>' + interval + colorbar + (field === 'pressure' ? '<br>Includes labelled QNH-derived estimates' : '');
+    $('shadeControl').hidden = !colored;
     $('showContours').disabled = field === 'wind';
   }
   async function json(path) {
@@ -163,7 +169,7 @@
       contours.clearLayers();
       activeBands = bands; updateColorScale();
       if (bands) for (const shift of [-360, 0, 360]) {
-        L.geoJSON(bands, { pane: 'temperatureShading', interactive: false, coordsToLatLng: (coordinate) => L.latLng(coordinate[1], coordinate[0] + shift), style: (feature) => ({ stroke: false, fillColor: fieldColor(feature.properties.value), fillOpacity: .52 }) }).addTo(shading);
+        L.geoJSON(bands, { pane: 'temperatureShading', interactive: false, coordsToLatLng: (coordinate) => L.latLng(coordinate[1], coordinate[0] + shift), style: (feature) => ({ stroke: false, fillColor: fieldColor(feature.properties.value), fillOpacity: shadeOpacity }) }).addTo(shading);
       }
       if (lines) {
         const color = field === 'temperature' ? '#a73218' : field === 'height' ? '#4a397b' : '#263640';
@@ -225,6 +231,11 @@
     finally { loadingManifest = false; }
   }
   $('chartKind').addEventListener('change', changeKind);
+  $('shadeTransparency').addEventListener('input', (event) => {
+    shadeOpacity = 1 - Number(event.target.value) / 100;
+    $('shadeTransparencyValue').textContent = event.target.value + '%';
+    shading.eachLayer((layer) => layer.setStyle({ fillOpacity: shadeOpacity }));
+  });
   $('chartField').addEventListener('change', draw); $('chartLevel').addEventListener('change', draw);
   $('showStations').addEventListener('change', renderStations); $('showContours').addEventListener('change', draw);
   $('showDiagnostics').addEventListener('change',renderDiagnostics);
