@@ -2,10 +2,14 @@ name: Build surface and upper-air observation charts
 
 on:
   workflow_dispatch:
+    inputs:
+      observation_time:
+        description: 'Optional nominal UTC cycle (YYYY-MM-DDTHH:MM); 00/12 only'
+        required: false
+        type: string
   schedule:
-    # User-selected UTC triggers. 09:15 is not in the requested schedule.
-    # GitHub may delay/drop scheduled events; these are requested start times.
-    - cron: '15 0,3,6,12,15,18,21 * * *'
+    # Fallback until the external scheduler is deployed. GitHub can delay cron.
+    - cron: '30 0,12 * * *'
 
 permissions:
   contents: write
@@ -33,13 +37,23 @@ jobs:
           python scripts/test_synoptic_features.py
       - name: Build surface, upper-air and synoptic diagnostics
         shell: bash
+        env:
+          OBSERVATION_TIME: ${{ inputs.observation_time }}
         run: |
+          args=()
+          if [ -n "${OBSERVATION_TIME:-}" ]; then
+            if [[ ! "$OBSERVATION_TIME" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T(00|12):00$ ]]; then
+              echo "::error::Invalid observation_time; expected YYYY-MM-DDT00:00 or YYYY-MM-DDT12:00."
+              exit 1
+            fi
+            args=(--surface-time "$OBSERVATION_TIME" --upper-time "$OBSERVATION_TIME")
+          fi
           # Early feeds may not be published yet. Retry a failed/incomplete
           # build once, without adding extra scheduled trigger times. Preserve
           # partial successful updates if the other chart type is still late.
           chart_available=0
           for attempt in 1 2; do
-            if python scripts/build_observation_charts.py; then
+            if python scripts/build_observation_charts.py "${args[@]}"; then
               chart_available=1
               if python -c 'import json,sys; d=json.load(open("assets/observation-charts/manifest.json")); sys.exit(0 if all(d.get("last_build", {}).get(k, {}).get("updated", False) for k in ("surface", "upper")) else 1)'; then
                 exit 0

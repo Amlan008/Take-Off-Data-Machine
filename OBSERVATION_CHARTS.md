@@ -5,9 +5,14 @@ The existing `wafs.html` URL now opens **Observation Charts**. The associated
 
 ## Publication
 
-- Surface valid times: 00, 03, 06, 09, 12, 15, 18 and 21 UTC.
+- Surface valid times: 00 and 12 UTC.
 - Upper-air nominal valid times: 00 and 12 UTC.
-- Scheduled builds: 01:47, 04:47, 07:47, 10:47, 13:47, 16:47, 19:47, 22:47 UTC.
+- Requested scheduled starts: 00:30 and 12:30 UTC. Both default cycle selectors
+  use a 30-minute data-arrival allowance and select 00/12 UTC only. An external
+  Worker scheduler is prepared in `cloudflare/observation-scheduler`; activation
+  requires the user's scoped GitHub token and Cloudflare deployment. GitHub cron
+  remains a fallback until the external scheduler is verified, then remove it
+  to avoid duplicate dispatches. See that directory's README for activation.
 - Surface observations are selected within ±45 minutes of the chart time.
 - Radiosondes are matched by nominal time within ±90 minutes, with launch time
   retained separately. Updating the latest sounding chart with late reports
@@ -16,13 +21,28 @@ The existing `wafs.html` URL now opens **Observation Charts**. The associated
   manifest every five minutes; it does not call the upstream feeds per user.
 - GitHub scheduled jobs and upstream feeds can be delayed. The page displays
   the actual chart valid time, publication time and missing-source status.
+- The workflow retries failed/incomplete builds once after ten minutes. If
+  only one chart type succeeds, that update is published and the other retains
+  its previous chart. Future hourly files are not requested before their hour;
+  such gaps are marked as partial early-cycle coverage.
+- Publishing retries a rejected push up to three times, rebasing the generated
+  commit over concurrent branch changes. Rebase conflicts fail safely; no force
+  push is used. This helps fetch/publish failures but cannot recover a cron
+  event that GitHub never starts. No additional trigger times were added.
 
 ## Data and pressure policy
 
 NOAA MADIS public hourly METAR and maritime NetCDF files provide land and marine
 observations. DWD's international SYNOP BUFR bulletins supplement land coverage.
-NOAA MADIS public radiosonde NetCDF files provide mandatory-level soundings at
-850, 700, 500, 300, 250 and 200 hPa. No credentials are required by these endpoints.
+NOAA MADIS public radiosonde NetCDF files provide mandatory and significant
+pressure-level sounding observations. Requested map levels are 925, 850, 800,
+700, 600, 500, 400, 300, 250, 200, 150 and 100 hPa. Full reported pressure profiles
+are saved in `soundings.json` for future Skew-T tools. Dew point is T minus the
+reported dew-point depression (`tdMan`/`tdSigT`/`tdTrop`); RH is derived over liquid
+water. Missing exact map levels are log-pressure interpolated only with <=200 hPa
+bracketing gaps and explicitly labelled; no extrapolation is allowed. Original
+profile levels are kept separately. Skew-T displays and typed fronts/air-mass
+movement are not yet implemented. No credentials are required by these feeds.
 Missing sounding coordinates are completed from the current NOAA IGRA WMO
 station inventory where the available coordinates agree; the location source
 is retained in each observation. Inconsistent launch timestamps are omitted.

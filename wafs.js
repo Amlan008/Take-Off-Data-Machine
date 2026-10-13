@@ -69,6 +69,8 @@
     result += '<p>Wind: ' + fmt(p.wind_kt, 'kt') + (Number.isFinite(p.wind_from_deg) ? ' from ' + Math.round(p.wind_from_deg) + '°' : '') + '<br>Air temperature: ' + fmt(p.temperature_c, '°C') + '<br>Dew point: ' + fmt(p.dewpoint_c, '°C');
     if (p.level_hpa) result += '<br>Pressure level: ' + p.level_hpa + ' hPa<br>Geopotential height: ' + fmt(p.height_m, 'm');
     else result += '<br>' + (p.pressure_method === 'estimated_qnh' ? 'Estimated MSLP from QNH' : 'Reported MSLP') + ': ' + fmt(p.mslp_hpa, 'hPa') + '<br>Airport QNH: ' + fmt(p.qnh_hpa, 'hPa') + '<br>Station elevation: ' + fmt(p.elevation_m, 'm') + (p.pressure_method === 'estimated_qnh' ? '<br><small>ISA inversion + temperature/elevation hypsometric reduction; approximate, lower analysis weight. High-terrain estimates are less reliable.</small>' : '');
+    result += '<br>Relative humidity: ' + fmt(p.relative_humidity_pct, '%') + (p.relative_humidity_pct != null ? ' (derived)' : '');
+    if (p.level_method === 'interpolated_log_pressure') result += '<br><b>Interpolated between observed sounding levels</b>';
     result += '</p><p>' + coords[1].toFixed(2) + '°, ' + coords[0].toFixed(2) + '°</p>';
     if (p.location_source) result += '<p>Location: ' + esc(p.location_source) + '</p>';
     if (p.supplement_sources?.length) result += '<p>Same-time supplementary values: ' + esc([...new Set(p.supplement_sources)].join(', ')) + '</p>';
@@ -184,7 +186,7 @@
       featureData=detected; renderDiagnostics(); renderStations();
       const usable = points.filter((point) => Number.isFinite(point.properties[fieldName()])).length;
       const age = (Date.now() - Date.parse(chosen.valid_time)) / 3600000;
-      const stale = age > (kind === 'surface' ? 6 : 18), degraded = chosen.feed_errors?.length > 0;
+      const stale = age > 18, degraded = chosen.feed_errors?.length > 0;
       setStatus(utc(chosen.valid_time) + ' · ' + usable.toLocaleString() + ' reports with this parameter.' + (stale ? ' Older chart: a newer cycle has not been published.' : '') + (degraded ? ' Some source files were unavailable; coverage may be incomplete.' : ''), stale || degraded);
       $('chartSummary').textContent = 'Published: ' + utc(chosen.published_at) + ' · Observation window: ±' + chosen.window_minutes + ' minutes · ' + Object.entries(chosen.sources).map(([name, count]) => name + ': ' + count.toLocaleString()).join(' · ') + (kind === 'upper' ? ' (pressure-level observations' + (chosen.station_count ? ' from ' + chosen.station_count + ' sounding sites' : '') + ').' : ' · QNH-derived MSLP estimates: ' + (chosen.pressure_estimates || 0).toLocaleString() + '.');
     } catch (error) {

@@ -1,4 +1,4 @@
-"""Publish observed surface (3-hour) and radiosonde (12-hour) Leaflet charts.
+"""Publish observed surface and radiosonde charts at 00/12 UTC.
 
 NOAA MADIS public METAR/maritime/RAOB NetCDF and DWD international SYNOP
 BUFR are decoded independently. Missing MSLP can be estimated from airport QNH.
@@ -33,13 +33,13 @@ if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 from synoptic_features import diagnose, wind_components
 UTC = timezone.utc
-LEVELS = (850, 700, 500, 300, 250, 200)
+LEVELS = (925, 850, 800, 700, 600, 500, 400, 300, 250, 200, 150, 100)
 MADIS = 'https://madis-data.ncep.noaa.gov/madisPublic1/data/point/'
 DWD = 'https://opendata.dwd.de/weather/weather_reports/synoptic/international/'
 KT = 1.94384449
 PRESSURE_INTERVAL = 1
 TEMPERATURE_INTERVAL = 1
-CHART_DELAY_MINUTES = 15
+CHART_DELAY_MINUTES = 30
 
 
 def prepare_surface_pressure(rows):
@@ -171,12 +171,23 @@ def station_locations(payload):
     return locations
 
 
-def decode_upper_nc(payload, target, locations=None):
+def relative_humidity(temperature, dewpoint):
+    """RH over liquid water, derived from observed T/Td (Magnus approximation)."""
+    if temperature is None or dewpoint is None or dewpoint > temperature + .5:
+        return None
+    return round(min(100., 100 * math.exp(17.625 * dewpoint / (243.04 + dewpoint)
+                                        - 17.625 * temperature / (243.04 + temperature))), 2)
+
+
+def decode_upper_nc(payload, target, locations=None, full_profile=False):
     result = []
     with Dataset('soundings', memory=gzip.decompress(payload)) as dataset:
         data = {key: value[:] for key, value in dataset.variables.items() if key in {
             'synTime', 'relTime', 'staLat', 'staLon', 'staName', 'prMan', 'numMand',
-            'tpMan', 'htMan', 'wdMan', 'wsMan', 'wmoStaNum'} or key.endswith('DD')}
+            'tpMan', 'tdMan', 'htMan', 'wdMan', 'wsMan', 'wmoStaNum',
+            'numSigT', 'prSigT', 'tpSigT', 'tdSigT', 'numSigPresW',
+            'prSigW', 'wdSigPrW', 'wsSigPrW', 'numTrop', 'prTrop',
+            'tpTrop', 'tdTrop', 'wdTrop', 'wsTrop'} or key.endswith('DD')}
         for i in range(len(dataset.dimensions['recNum'])):
             timestamp = nc_value(data, 'synTime', i, 0, 4e9)
             lat = nc_value(data, 'staLat', i, -90, 90)
@@ -199,15 +210,26 @@ def decode_upper_nc(payload, target, locations=None):
             if abs((observed - target).total_seconds()) > 90 * 60:
                 continue
             surface_pressure = number(data['prMan'][i, 0], 1, 1100)
-            mandatory_count = number(data['numMand'][i], 0, data['prMan'].shape[1])
-            for j in range(int(mandatory_count or 0)):
-                pressure = number(data['prMan'][i, j], 1, 1100)
-                if pressure not in LEVELS or (surface_pressure is not None and pressure > surface_pressure):
+            groups = [('mandatory', 'numMand', 'prMan', 'tpMan', 'tdMan', 'htMan', 'wdMan', 'wsMan')]
+            if full_profile:
+                groups += [('significant_temperature', 'numSigT', 'prSigT', 'tpSigT', 'tdSigT', None, None, None),
+                           ('significant_wind', 'numSigPresW', 'prSigW', None, None, None, 'wdSigPrW', 'wsSigPrW'),
+                           ('tropopause', 'numTrop', 'prTrop', 'tpTrop', 'tdTrop', None, 'wdTrop', 'wsTrop')]
+            for group, count_key, pressure_key, temp_key, depression_key, height_key, direction_key, speed_key in groups:
+              if pressure_key not in data:
+                continue
+              count = nc_value(data, count_key, i, 0, data[pressure_key].shape[1])
+              for j in range(int(count or 0)):
+                pressure = nc_value(data, pressure_key, (i, j), 1, 1100)
+                if pressure is None or (not full_profile and pressure not in LEVELS) or (surface_pressure is not None and pressure > surface_pressure):
                     continue
                 def value(key, low=-1e8, high=1e8):
                     return nc_value(data, key, (i, j), low, high)
-                temp = value('tpMan', 173.15, 323.15)
-                speed = value('wsMan', 0, 200)
+                temp = value(temp_key, 173.15, 323.15)
+                depression = value(depression_key, 0, 100)
+                temperature = number(temp - 273.15) if temp is not None else None
+                dewpoint = number(temp - depression - 273.15) if temp is not None and depression is not None else None
+                speed = value(speed_key, 0, 200)
                 release = nc_value(data, 'relTime', i, 0, 4e9)
                 # Some upstream launch dates are inconsistent with synTime.
                 # Do not present a launch from a different day as genuine.
@@ -217,12 +239,15 @@ def decode_upper_nc(payload, target, locations=None):
                     'station': text(data['staName'][i]),
                     'latitude': lat, 'longitude': lon, 'observed_at': iso(observed),
                     'launch_at': iso(datetime.fromtimestamp(release, UTC)) if release is not None else None,
-                    'source': 'NOAA MADIS radiosonde', 'level_hpa': int(pressure),
+                    'source': 'NOAA MADIS radiosonde', 'level_hpa': pressure,
+                    'level_type': group, 'level_method': 'observed',
                     'location_source': location_source,
-                    'height_m': value('htMan', -500, 20000),
-                    'temperature_c': number(temp - 273.15) if temp is not None else None,
+                    'height_m': value(height_key, -500, 35000),
+                    'temperature_c': temperature, 'dewpoint_c': dewpoint,
+                    'relative_humidity_pct': relative_humidity(temperature, dewpoint),
+                    'humidity_method': 'derived_from_temperature_and_dewpoint' if dewpoint is not None else None,
                     'wind_kt': number(speed * KT) if speed is not None else None,
-                    'wind_from_deg': value('wdMan', 0, 360),
+                    'wind_from_deg': value(direction_key, 0, 360),
                 })
     return result
 
@@ -350,7 +375,7 @@ def deduplicate(rows, target):
         # Do not splice observations from different times into one station plot.
         for other in group[1:]:
             if other['observed_at'] == chosen['observed_at']:
-                for name in ('mslp_hpa', 'temperature_c', 'dewpoint_c', 'wind_kt', 'wind_from_deg', 'height_m'):
+                for name in ('mslp_hpa', 'temperature_c', 'dewpoint_c', 'relative_humidity_pct', 'wind_kt', 'wind_from_deg', 'height_m'):
                     if chosen.get(name) is None and other.get(name) is not None:
                         chosen[name] = other[name]
                         chosen.setdefault('supplement_sources', []).append(other['source'])
@@ -500,6 +525,10 @@ def build_chart(output, kind, target, rows, errors, upper_context=None, diagnost
     stamp = target.strftime('%Y%m%d%H')
     folder = output / kind / stamp
     wind_components(rows)
+    for row in rows:
+        row['relative_humidity_pct'] = relative_humidity(row.get('temperature_c'), row.get('dewpoint_c'))
+        if row['relative_humidity_pct'] is not None:
+            row['humidity_method'] = 'derived_from_temperature_and_dewpoint'
     if kind == 'surface':
         prepare_surface_pressure(rows)
         write_json(folder / 'observations.geojson', points(rows, target))
@@ -516,6 +545,17 @@ def build_chart(output, kind, target, rows, errors, upper_context=None, diagnost
             diagnostic['properties']['valid_time'] = iso(target)
             write_json(folder / 'features.geojson', diagnostic)
     else:
+        # Keep all reported pressure levels for future sounding/Skew-T tools.
+        # The map uses a separate, explicitly labelled pressure-level sample.
+        profiles = {}
+        for row in rows:
+            key = (row['station'], row['latitude'], row['longitude'], row['observed_at'])
+            profiles.setdefault(key, []).append(row)
+        write_json(folder / 'soundings.json', {'valid_time': iso(target), 'profiles': [
+            {'station': key[0], 'latitude': key[1], 'longitude': key[2], 'observed_at': key[3],
+             'levels': sorted(group, key=lambda row: -row['level_hpa'])}
+            for key, group in profiles.items()]})
+        rows = pressure_samples(rows)
         for level in LEVELS:
             selected = [row for row in rows if row['level_hpa'] == level]
             write_json(folder / f'{level}-observations.geojson', points(selected, target))
@@ -541,6 +581,47 @@ def build_chart(output, kind, target, rows, errors, upper_context=None, diagnost
     return entry
 
 
+def pressure_samples(rows):
+    """Log-pressure interpolation within each sounding; never extrapolate.
+
+    Bracketing gap <=200 hPa; preserve missing variables independently.
+    Wind components are interpolated, not circular direction angles.
+    """
+    wind_components(rows)
+    groups = {}
+    for row in rows:
+        groups.setdefault((row['station'], row['latitude'], row['longitude'], row['observed_at']), []).append(row)
+    output = []
+    for group in groups.values():
+        for level in LEVELS:
+            exact = next((row for row in group if row['level_hpa'] == level), None)
+            if exact is not None:
+                output.append(dict(exact))
+                continue
+            sample = dict(group[0], level_hpa=level, level_method='interpolated_log_pressure', level_type='requested')
+            any_value = False
+            for field in ('temperature_c', 'dewpoint_c', 'height_m', 'u_ms', 'v_ms'):
+                usable = sorted((row for row in group if row.get(field) is not None), key=lambda row: row['level_hpa'])
+                below = [row for row in usable if row['level_hpa'] < level]
+                above = [row for row in usable if row['level_hpa'] > level]
+                sample[field] = None
+                if not below or not above:
+                    continue
+                lo, hi = below[-1], above[0]
+                if hi['level_hpa'] - lo['level_hpa'] > 200:
+                    continue
+                fraction = math.log(level / lo['level_hpa']) / math.log(hi['level_hpa'] / lo['level_hpa'])
+                sample[field] = round(lo[field] + fraction * (hi[field] - lo[field]), 3)
+                any_value = True
+            u, v = sample['u_ms'], sample['v_ms']
+            sample['wind_kt'] = number(math.hypot(u, v) * KT) if u is not None and v is not None else None
+            sample['wind_from_deg'] = (math.degrees(math.atan2(-u, -v)) % 360) if u is not None and v is not None else None
+            sample['relative_humidity_pct'] = relative_humidity(sample['temperature_c'], sample['dewpoint_c'])
+            if any_value:
+                output.append(sample)
+    return output
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT / 'assets' / 'observation-charts')
@@ -564,11 +645,13 @@ def main():
             for entry in manifest[kind]:
                 folder = args.output / kind / entry['path']
                 rows = []
-                files = [folder / 'observations.geojson'] if kind == 'surface' else [folder / f'{level}-observations.geojson' for level in LEVELS]
+                files = [folder / 'observations.geojson'] if kind == 'surface' else [folder / f'{level}-observations.geojson' for level in LEVELS if (folder / f'{level}-observations.geojson').exists()]
                 for file in files:
                     for feature in json.loads(file.read_text())['features']:
                         lon, lat = feature['geometry']['coordinates']
                         rows.append(dict(feature['properties'], latitude=lat, longitude=lon))
+                if kind == 'upper' and (folder / 'soundings.json').exists():
+                    rows = [row for profile in json.loads((folder / 'soundings.json').read_text())['profiles'] for row in profile['levels']]
                 result = build_chart(args.output, kind, datetime.fromisoformat(entry['valid_time']), rows, entry.get('feed_errors', []), diagnostics_only=args.diagnostics_only, contours_only=args.contours_only)
                 updated.append(result)
                 print(f'Reprocessed {kind} {entry["path"]}: {len(rows)} reports', flush=True)
@@ -576,10 +659,10 @@ def main():
         manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=1)
         write_json(path, manifest)
         return
-    surface = datetime.fromisoformat(args.surface_time).replace(tzinfo=UTC) if args.surface_time else slot(now, 3, CHART_DELAY_MINUTES)
+    surface = datetime.fromisoformat(args.surface_time).replace(tzinfo=UTC) if args.surface_time else slot(now, 12, CHART_DELAY_MINUTES)
     upper = datetime.fromisoformat(args.upper_time).replace(tzinfo=UTC) if args.upper_time else slot(now, 12, CHART_DELAY_MINUTES)
-    if surface.minute or surface.hour % 3 or upper.minute or upper.hour % 12:
-        parser.error('Surface times must be 00/03/06/09/12/15/18/21 UTC; upper-air times 00/12 UTC.')
+    if surface.minute or surface.hour % 12 or upper.minute or upper.hour % 12:
+        parser.error('Surface and upper-air times must be 00/12 UTC.')
     surface_errors, upper_errors = [], []
     surface_rows = retrieve(surface, 'metar', lambda data, target: decode_surface_nc(data, 'NOAA MADIS METAR', target), surface_errors)
     surface_rows += retrieve(surface, 'maritime', lambda data, target: decode_surface_nc(data, 'NOAA MADIS maritime', target), surface_errors)
@@ -599,7 +682,7 @@ def main():
         locations = station_locations(fetch('https://www.ncei.noaa.gov/pub/data/igra/igra2-station-list.txt'))
     except Exception as exc:
         upper_errors.append(f'Radiosonde station inventory: {exc}')
-    upper_rows = retrieve(upper, 'raob', lambda data, target: decode_upper_nc(data, target, locations), upper_errors)
+    upper_rows = retrieve(upper, 'raob', lambda data, target: decode_upper_nc(data, target, locations, full_profile=True), upper_errors)
     surface_rows, upper_rows = deduplicate(surface_rows, surface), deduplicate(upper_rows, upper)
     path = args.output / 'manifest.json'
     previous = json.loads(path.read_text()) if path.exists() else {}

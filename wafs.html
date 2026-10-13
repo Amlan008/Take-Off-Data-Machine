@@ -23,14 +23,14 @@
   <header class="chart-header"><div class="eyebrow"><span></span> GLOBAL WEATHER OBSERVATIONS</div>
     <nav class="app-nav" aria-label="Application sections"><a href="index.html">Home</a><a href="aerodrome-forecast.html">Aerodrome Forecast</a><a href="storms.html">Storm systems</a><a href="ash.html">Volcanic Ash Advisories</a><a href="weather-analyzer.html">Weather Analyzer</a><a class="active" href="wafs.html">Observation Charts</a></nav>
     <h1>Surface &amp;<br /><em>Upper-air Charts</em></h1>
-    <p>Observed pressure, wind and temperature at three-hourly surface times, and height, wind and temperature at 00/12 UTC aloft.</p>
+    <p>Observed surface and upper-air charts at 00/12 UTC. Builds are requested at 00:30/12:30 UTC.</p>
   </header>
   <section class="chart-stage" id="chartStage">
     <div id="observationMap" aria-label="Interactive surface and upper-air observation charts"></div>
     <div class="chart-controls">
       <details open><summary>CHART CONTROLS</summary>
-        <label>CHART TYPE<select id="chartKind"><option value="surface">Surface · every 3 hours</option><option value="upper">Upper air · 00/12 UTC</option></select></label>
-        <div class="chart-pair"><label>PARAMETER<select id="chartField"><option value="pressure">Mean sea-level pressure</option><option value="wind">Wind</option><option value="temperature">Air temperature</option></select></label><label>PRESSURE LEVEL<select id="chartLevel" disabled><option value="850">850 hPa</option><option value="700">700 hPa</option><option value="500">500 hPa</option><option value="300">300 hPa</option><option value="250">250 hPa</option><option value="200">200 hPa</option></select></label></div>
+        <label>CHART TYPE<select id="chartKind"><option value="surface">Surface · 00/12 UTC</option><option value="upper">Upper air · 00/12 UTC</option></select></label>
+        <div class="chart-pair"><label>PARAMETER<select id="chartField"><option value="pressure">Mean sea-level pressure</option><option value="wind">Wind</option><option value="temperature">Air temperature</option></select></label><label>PRESSURE LEVEL<select id="chartLevel" disabled><option value="925">925 hPa</option><option value="850" selected>850 hPa</option><option value="800">800 hPa</option><option value="700">700 hPa</option><option value="600">600 hPa</option><option value="500">500 hPa</option><option value="400">400 hPa</option><option value="300">300 hPa</option><option value="250">250 hPa</option><option value="200">200 hPa</option><option value="150">150 hPa</option><option value="100">100 hPa</option></select></label></div>
         <div class="chart-switches"><label><input id="showStations" type="checkbox" checked />Station plots</label><label><input id="showContours" type="checkbox" checked />Contours</label></div>
         <div class="chart-switches"><label><input id="showDiagnostics" type="checkbox" checked />Synoptic diagnostics</label></div>
         <details id="featureOptions" open style="margin-top:12px"><summary>FEATURE LAYERS · EXPERIMENTAL</summary><div class="feature-switches"><label><input type="checkbox" data-feature="high,low" checked />High / Low</label><label><input type="checkbox" data-feature="trough,ridge" checked />Trough / Ridge</label><label><input type="checkbox" data-feature="front" checked />Potential fronts</label><label><input type="checkbox" data-feature="jet" checked />Jet streams</label><label><input type="checkbox" data-feature="cyclone,tropical,extratropical" checked />Cyclonic systems</label></div></details>

@@ -1,0 +1,7 @@
+{
+  "name": "weathermachine-observation-scheduler",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-13",
+  "triggers": { "crons": ["30 0,12 * * *"] },
+  "observability": { "enabled": true }
+}

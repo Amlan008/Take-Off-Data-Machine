@@ -87,20 +87,20 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(result.returncode,0)
         self.assertNotIn('push_calls',state)
 
-    def test_requested_quarter_past_triggers_select_current_surface_cycle(self):
-        self.assertEqual(charts.CHART_DELAY_MINUTES, 15)
-        for hour in (0, 3, 6, 12, 15, 18, 21):
-            start = TIME.replace(hour=hour, minute=15)
-            self.assertEqual(charts.slot(start, 3, charts.CHART_DELAY_MINUTES), start.replace(minute=0))
-        before = TIME.replace(hour=0, minute=14)
-        self.assertEqual(charts.slot(before, 3, charts.CHART_DELAY_MINUTES),
-                         (before - timedelta(days=1)).replace(hour=21, minute=0))
-
-    def test_new_nominal_sounding_cycle_is_attempted_at_quarter_past(self):
+    def test_half_past_triggers_select_current_twice_daily_cycle(self):
+        self.assertEqual(charts.CHART_DELAY_MINUTES, 30)
         for hour in (0, 12):
-            start = TIME.replace(hour=hour, minute=15)
+            start = TIME.replace(hour=hour, minute=30)
             self.assertEqual(charts.slot(start, 12, charts.CHART_DELAY_MINUTES), start.replace(minute=0))
-        before = TIME.replace(hour=12, minute=14)
+        before = TIME.replace(hour=0, minute=29)
+        self.assertEqual(charts.slot(before, 12, charts.CHART_DELAY_MINUTES),
+                         (before - timedelta(days=1)).replace(hour=12, minute=0))
+
+    def test_new_nominal_sounding_cycle_is_attempted_at_half_past(self):
+        for hour in (0, 12):
+            start = TIME.replace(hour=hour, minute=30)
+            self.assertEqual(charts.slot(start, 12, charts.CHART_DELAY_MINUTES), start.replace(minute=0))
+        before = TIME.replace(hour=12, minute=29)
         self.assertEqual(charts.slot(before, 12, charts.CHART_DELAY_MINUTES), before.replace(hour=0, minute=0))
 
     def test_early_build_does_not_download_future_hourly_files(self):
@@ -196,19 +196,39 @@ class ObservationTests(unittest.TestCase):
                     'prMan': [[1000, 850, 700], [800, 850, 700], [1000, 850, 700]],
                     'htMan': [[100, 1500, 3000]] * 3,
                     'tpMan': [[290, 280, 270]] * 3,
+                    'tdMan': [[3, 5, 10]] * 3,
                     'wdMan': [[90, 100, 110]] * 3, 'wsMan': [[5, 10, 15]] * 3,
                 }.items():
                     dataset.createVariable(key, 'f8', ('recNum', 'manLevel'))[:] = values
                 names = dataset.createVariable('staName', 'S1', ('recNum', 'nameLength'))
                 names[:] = np.array([[bytes([x]) for x in name] for name in (b'AAAA', b'BBBB', b'CCCC')], dtype='S1')
             rows = charts.decode_upper_nc(gzip.compress(path.read_bytes()), target, {42002: (21, 71, 2026)})
-        self.assertEqual(len(rows), 3)
+        self.assertEqual(len(rows), 4)
+        moist = next(row for row in rows if row['station'] == 'AAAA' and row['level_hpa'] == 850)
+        self.assertAlmostEqual(moist['dewpoint_c'], 1.85)
+        self.assertAlmostEqual(moist['temperature_c'], 6.85)
+        self.assertGreater(moist['relative_humidity_pct'], 0)
+        self.assertLess(moist['relative_humidity_pct'], 100)
         self.assertTrue(all(row['station'] != 'CCCC' for row in rows))
         self.assertFalse(any(row['station'] == 'BBBB' and row['level_hpa'] == 850 for row in rows))
         self.assertTrue(all(row['launch_at'] is None for row in rows if row['station'] == 'AAAA'))
         restored = next(row for row in rows if row['station'] == 'BBBB')
         self.assertEqual(restored['longitude'], 71)
         self.assertEqual(restored['location_source'], 'NOAA IGRA WMO station inventory')
+
+    def test_pressure_level_interpolation_and_no_extrapolation(self):
+        base = {'station': 'TEST', 'latitude': 20, 'longitude': 70,
+                'observed_at': charts.iso(TIME), 'source': 'NOAA MADIS radiosonde'}
+        rows = [dict(base, level_hpa=850, temperature_c=10, dewpoint_c=5, height_m=1500, wind_kt=20, wind_from_deg=350),
+                dict(base, level_hpa=700, temperature_c=0, dewpoint_c=-5, height_m=3000, wind_kt=20, wind_from_deg=10)]
+        result = charts.pressure_samples(rows)
+        self.assertEqual({row['level_hpa'] for row in result}, {850, 800, 700})
+        middle = next(row for row in result if row['level_hpa'] == 800)
+        self.assertEqual(middle['level_method'], 'interpolated_log_pressure')
+        self.assertTrue(0 < middle['temperature_c'] < 10)
+        self.assertTrue(middle['wind_from_deg'] < 20 or middle['wind_from_deg'] > 340)
+        self.assertTrue(0 < middle['relative_humidity_pct'] <= 100)
+        self.assertIsNone(charts.relative_humidity(0, 10))
 
     def test_observation_holes_do_not_receive_global_contours(self):
         rows = [{'latitude': lat, 'longitude': lon, 'mslp_hpa': p} for lat, lon, p in [(0, 0, 1000), (0, 4, 1012), (4, 0, 1016), (4, 4, 1020)]]
