@@ -1,20 +1,21 @@
-name: Build global aviation hazard layers
+name: Build surface and upper-air observation charts
 
 on:
   workflow_dispatch:
   schedule:
-    # Allow time for each 00/06/12/18 UTC GFS cycle to become available.
-    - cron: '17 2,8,14,20 * * *'
+    # Publish each three-hour surface slot after reports have arrived.
+    # The builder also refreshes the latest nominal 00/12 UTC sounding chart.
+    - cron: '47 1,4,7,10,13,16,19,22 * * *'
 
 permissions:
   contents: write
 
 concurrency:
-  group: gfs-hazards
+  group: observation-charts
   cancel-in-progress: false
 
 jobs:
-  build-hazard-layers:
+  build-observation-charts:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -22,18 +23,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install GRIB decoding support
+      - name: Install observation decoding and contour support
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes libeccodes0
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-gfs-hazards.txt
-      - name: Build latest GFS diagnostic layers
-        run: python scripts/build_gfs_hazards.py
-      - name: Commit generated map layers
+          python -m pip install -r requirements-observation-charts.txt
+      - name: Check decoders and synoptic diagnostic rules
+        run: |
+          python scripts/test_observation_charts.py
+          python scripts/test_synoptic_features.py
+      - name: Build surface, upper-air and synoptic diagnostics
+        run: python scripts/build_observation_charts.py
+      - name: Commit generated observation charts
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add assets/gfs-hazards
-          git diff --cached --quiet || git commit -m 'Update GFS aviation hazard layers'
+          git add assets/observation-charts
+          git diff --cached --quiet || git commit -m 'Update surface and upper-air observation charts'
           git push
