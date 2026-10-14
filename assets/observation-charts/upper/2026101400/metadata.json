@@ -1,0 +1,1 @@
+{"path":"2026101400","valid_time":"2026-10-14T00:00:00Z","published_at":"2026-10-14T01:19:46Z","count":2160,"counts":{"mslp_hpa":0,"temperature_c":2158,"dewpoint_c":2158,"wind_kt":1772,"height_m":1785},"sources":{"NOAA MADIS radiosonde":2160},"feed_errors":["raob 14/01: HTTP Error 404: Not Found"],"station_count":183,"window_minutes":90}
