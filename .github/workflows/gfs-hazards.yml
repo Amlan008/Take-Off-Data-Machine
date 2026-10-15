@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       observation_time:
-        description: 'Optional nominal UTC cycle (YYYY-MM-DDTHH:MM); 00/12 only'
+        description: 'Optional surface UTC cycle (YYYY-MM-DDTHH:MM); 00/03/06/09/12/15/18/21. Upper-air uses preceding 00/12.'
         required: false
         type: string
   schedule:
     # Fallback until the external scheduler is deployed. GitHub can delay cron.
-    - cron: '30 0,12 * * *'
+    - cron: '30 */3 * * *'
 
 permissions:
   contents: write
@@ -43,11 +43,12 @@ jobs:
         run: |
           args=()
           if [ -n "${OBSERVATION_TIME:-}" ]; then
-            if [[ ! "$OBSERVATION_TIME" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T(00|12):00$ ]]; then
-              echo "::error::Invalid observation_time; expected YYYY-MM-DDT00:00 or YYYY-MM-DDT12:00."
+            if [[ ! "$OBSERVATION_TIME" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T(00|03|06|09|12|15|18|21):00$ ]]; then
+              echo "::error::Invalid observation_time; expected YYYY-MM-DDTHH:00 at a three-hourly UTC cycle."
               exit 1
             fi
-            args=(--surface-time "$OBSERVATION_TIME" --upper-time "$OBSERVATION_TIME")
+            # Builder derives the preceding 00/12 upper-air cycle separately.
+            args=(--surface-time "$OBSERVATION_TIME")
           fi
           # Early feeds may not be published yet. Retry a failed/incomplete
           # build once, without adding extra scheduled trigger times. Preserve

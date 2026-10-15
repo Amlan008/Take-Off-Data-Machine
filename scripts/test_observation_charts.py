@@ -27,7 +27,7 @@ def workflow_script(step_name):
     return textwrap.dedent(section.split('        run: |\n', 1)[1])
 
 
-def simulate_workflow_script(script, state):
+def simulate_workflow_script(script, state, env_overrides=None):
     """Run the actual workflow Bash with isolated fake Python/Git/sleep tools."""
     with tempfile.TemporaryDirectory() as directory:
         folder = Path(directory)
@@ -41,6 +41,7 @@ from pathlib import Path
 p=Path('state.json'); d=json.loads(p.read_text()); name=Path(sys.argv[0]).name; args=sys.argv[1:]; code=0
 if name=='python':
     if args and args[0]=='scripts/build_observation_charts.py':
+        d.setdefault('build_args',[]).append(args[1:])
         index=d.get('build_calls',0); d['build_calls']=index+1
         attempt=d['builds'][index]; d['ready']=attempt['ready']; code=attempt['exit']
     else: code=0 if d.get('ready') else 1
@@ -58,12 +59,24 @@ p.write_text(json.dumps(d)); sys.exit(code)
             executable.write_text(fake)
             executable.chmod(0o755)
         env = dict(os.environ, PATH=str(bin_folder) + os.pathsep + os.environ['PATH'], CHART_BRANCH='main')
+        env.update(env_overrides or {})
         result = subprocess.run(['bash', '-e', '-o', 'pipefail'], input=script, text=True,
                                 cwd=folder, env=env, capture_output=True)
         return result, json.loads(state_file.read_text())
 
 
 class ObservationTests(unittest.TestCase):
+    def test_workflow_passes_surface_only_and_rejects_non_synoptic_input(self):
+        script=workflow_script('Build surface, upper-air and synoptic diagnostics')
+        for hour in range(0,24,3):
+            value=f'2026-10-15T{hour:02d}:00'
+            result,state=simulate_workflow_script(script,{'builds':[{'exit':0,'ready':True}]},{'OBSERVATION_TIME':value})
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(state['build_args'],[['--surface-time',value]])
+        result,state=simulate_workflow_script(script,{'builds':[]},{'OBSERVATION_TIME':'2026-10-15T02:00'})
+        self.assertNotEqual(result.returncode,0)
+        self.assertNotIn('build_calls',state)
+
     def test_workflow_retry_preserves_partial_success(self):
         script = workflow_script('Build surface, upper-air and synoptic diagnostics')
         complete, partial, failed = {'exit':0,'ready':True}, {'exit':0,'ready':False}, {'exit':1,'ready':False}
@@ -87,14 +100,30 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(result.returncode,0)
         self.assertNotIn('push_calls',state)
 
-    def test_half_past_triggers_select_current_twice_daily_cycle(self):
+    def test_half_past_triggers_select_current_three_hourly_cycle(self):
         self.assertEqual(charts.CHART_DELAY_MINUTES, 30)
-        for hour in (0, 12):
+        for hour in range(0, 24, 3):
             start = TIME.replace(hour=hour, minute=30)
-            self.assertEqual(charts.slot(start, 12, charts.CHART_DELAY_MINUTES), start.replace(minute=0))
+            surface, upper = charts.resolve_cycles(start)
+            self.assertEqual(surface, start.replace(minute=0))
+            self.assertEqual(upper, start.replace(hour=hour // 12 * 12, minute=0))
         before = TIME.replace(hour=0, minute=29)
-        self.assertEqual(charts.slot(before, 12, charts.CHART_DELAY_MINUTES),
-                         (before - timedelta(days=1)).replace(hour=12, minute=0))
+        surface, upper = charts.resolve_cycles(before)
+        self.assertEqual(surface, (before - timedelta(days=1)).replace(hour=21, minute=0))
+        self.assertEqual(upper, (before - timedelta(days=1)).replace(hour=12, minute=0))
+
+    def test_explicit_surface_dispatch_does_not_shift_with_delayed_start(self):
+        now = TIME.replace(day=15, hour=13)
+        surface, upper = charts.resolve_cycles(now, '2026-10-14T21:00')
+        self.assertEqual(charts.iso(surface), '2026-10-14T21:00:00Z')
+        self.assertEqual(charts.iso(upper), '2026-10-14T12:00:00Z')
+        for hour in range(0,24,3):
+            surface, upper = charts.resolve_cycles(now, f'2026-10-14T{hour:02d}:00')
+            self.assertEqual(surface.hour, hour)
+            self.assertEqual(upper.hour, hour//12*12)
+        with self.assertRaises(ValueError): charts.resolve_cycles(now, '2026-10-14T02:00')
+        with self.assertRaises(ValueError): charts.resolve_cycles(now, '2026-10-14T06:00', '2026-10-14T06:00')
+        with self.assertRaises(ValueError): charts.resolve_cycles(now, '2026-10-32T06:00')
 
     def test_new_nominal_sounding_cycle_is_attempted_at_half_past(self):
         for hour in (0, 12):

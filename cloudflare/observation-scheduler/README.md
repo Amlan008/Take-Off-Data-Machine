@@ -1,8 +1,10 @@
 # Observation chart scheduler
 
 Dedicated Cloudflare Worker, separate from the volcanic ash bot. Dispatches the
-GitHub observation workflow at 00:30 and 12:30 UTC with the explicit same-day
-00:00/12:00 observation cycle. No D1/KV/database is needed.
+GitHub observation workflow at 00:30, 03:30, 06:30, 09:30, 12:30, 15:30,
+18:30 and 21:30 UTC. Worker v4 sends the three-hourly surface observation time;
+the builder selects the preceding 00/12 UTC upper-air cycle separately. Delayed
+dispatches retain their original event's cycle. No D1/KV/database is needed.
 
 ## Activation (user credential required)
 
@@ -15,8 +17,12 @@ GitHub observation workflow at 00:30 and 12:30 UTC with the explicit same-day
    `weathermachine-observation-scheduler`, paste `worker.js`, and deploy.
 4. Add encrypted secret `GITHUB_ACTIONS_TOKEN` with the token value directly
    in Cloudflare. Never paste it into chat, commit it, or put it in site JS.
-5. Add Cron Trigger `30 0,12 * * *` (UTC). Allow trigger changes to propagate.
-6. Confirm a Worker invocation and an Actions run on the next cycle. HTTP 204
+5. Add Cron Trigger `30 */3 * * *` (UTC). Allow trigger changes to propagate.
+   Deploy the updated GitHub workflow/builder BEFORE Worker v4; old Worker v3
+   remains compatible but requests only 00/12 UTC cycles. After deployment,
+   `/health` should show `scheduler-v4`, eight start times, and the secret-present
+   flag (never the token). Existing credentials need not change.
+6. Confirm a Worker invocation and an Actions run on the next cycle. HTTP 200/204
    means dispatch accepted, not chart generation completed; check Actions and
    the published manifest separately. Token expiry/authentication failures
    require renewal. No public HTTP endpoint can dispatch jobs.
@@ -28,6 +34,8 @@ Alternatively deploy this directory with Wrangler and set the secret using
 `wrangler secret put GITHUB_ACTIONS_TOKEN`. The JSONC config contains the cron.
 
 Three bounded retries cover network errors, 429 and transient server errors.
+Requests use `redirect: manual`; redirects are rejected without forwarding the
+Authorization header. Runtime failures are logged with credential redaction.
 Permanent authentication/permission failures fail immediately. Ambiguous timeouts
 can produce duplicate runs; workflow concurrency protects publication but does
 not provide exactly-once dispatch. This does not guarantee an on-time completed
@@ -46,5 +54,6 @@ Skew-T displays now use these profiles. Front classification and air-mass
 advection compare compatible snapshots with common observation support. All
 front types are experimental candidates; ambiguous cases remain unclassified.
 Humidity alone never establishes a front. Advection arrows are wind-guided
-diagnostics, not parcel trajectories. Two daily snapshots limit temporal accuracy.
+diagnostics, not parcel trajectories. Upper-air snapshots remain twice daily;
+surface temporal comparisons require at least six hours of compatible history.
 See OBSERVATION_CHARTS.md for thresholds and verification limits.

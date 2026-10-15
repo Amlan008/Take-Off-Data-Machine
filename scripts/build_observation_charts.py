@@ -1,4 +1,4 @@
-"""Publish observed surface and radiosonde charts at 00/12 UTC.
+"""Publish three-hourly surface charts and 00/12 UTC radiosonde charts.
 
 NOAA MADIS public METAR/maritime/RAOB NetCDF and DWD international SYNOP
 BUFR are decoded independently. Missing MSLP can be estimated from airport QNH.
@@ -106,6 +106,21 @@ def iso(date):
 def slot(now, interval, delay):
     date = now - timedelta(minutes=delay)
     return date.replace(hour=date.hour // interval * interval, minute=0, second=0, microsecond=0)
+
+
+def resolve_cycles(now, surface_time=None, upper_time=None):
+    def parse(value):
+        date = datetime.fromisoformat(value)
+        return date.replace(tzinfo=UTC) if date.tzinfo is None else date.astimezone(UTC)
+    surface = parse(surface_time) if surface_time else slot(now, 3, CHART_DELAY_MINUTES)
+    # Explicit surface dispatches retain their matching upper-air nominal cycle
+    # even if the job is delayed across midnight or the next sounding time.
+    upper = parse(upper_time) if upper_time else slot(surface, 12, 0)
+    if surface.minute or surface.second or surface.microsecond or surface.hour % 3:
+        raise ValueError('Surface times must be 00/03/06/09/12/15/18/21 UTC.')
+    if upper.minute or upper.second or upper.microsecond or upper.hour % 12:
+        raise ValueError('Upper-air times must be 00/12 UTC.')
+    return surface, upper
 
 
 def nc_value(dataset, key, index, low=-1e8, high=1e8):
@@ -683,10 +698,11 @@ def main():
         manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=2)
         write_json(path, manifest)
         return
-    surface = datetime.fromisoformat(args.surface_time).replace(tzinfo=UTC) if args.surface_time else slot(now, 12, CHART_DELAY_MINUTES)
-    upper = datetime.fromisoformat(args.upper_time).replace(tzinfo=UTC) if args.upper_time else slot(now, 12, CHART_DELAY_MINUTES)
-    if surface.minute or surface.hour % 12 or upper.minute or upper.hour % 12:
-        parser.error('Surface and upper-air times must be 00/12 UTC.')
+    try:
+        surface, upper = resolve_cycles(now, args.surface_time, args.upper_time)
+    except ValueError as exc:
+        parser.error(str(exc))
+    print(f'Requested surface cycle: {iso(surface)}; upper-air nominal cycle: {iso(upper)}', flush=True)
     surface_errors, upper_errors = [], []
     surface_rows = retrieve(surface, 'metar', lambda data, target: decode_surface_nc(data, 'NOAA MADIS METAR', target), surface_errors)
     surface_rows += retrieve(surface, 'maritime', lambda data, target: decode_surface_nc(data, 'NOAA MADIS maritime', target), surface_errors)

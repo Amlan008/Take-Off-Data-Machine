@@ -5,10 +5,13 @@ The existing `wafs.html` URL now opens **Observation Charts**. The associated
 
 ## Publication
 
-- Surface valid times: 00 and 12 UTC.
+- Surface valid times: 00, 03, 06, 09, 12, 15, 18 and 21 UTC.
 - Upper-air nominal valid times: 00 and 12 UTC.
-- Requested scheduled starts: 00:30 and 12:30 UTC. Both default cycle selectors
-  use a 30-minute data-arrival allowance and select 00/12 UTC only. An external
+- Requested scheduled starts: 00:30, 03:30, 06:30, 09:30, 12:30, 15:30,
+  18:30 and 21:30 UTC (`30 */3 * * *`). The default surface selector uses a
+  30-minute arrival allowance. Upper-air uses the preceding 00/12 UTC cycle
+  relative to the requested surface time; intervening runs can incorporate late
+  soundings without creating a new upper-air nominal cycle. An external
   Worker scheduler is prepared in `cloudflare/observation-scheduler`; activation
   requires the user's scoped GitHub token and Cloudflare deployment. GitHub cron
   remains a fallback until the external scheduler is verified, then remove it
@@ -204,7 +207,10 @@ soundings, marine measurement differences and reduction errors still matter.
 Non-detection does not establish absence. Fronts/thermal cyclone types may be
 unavailable if moisture or vertical evidence is insufficient.
 
-Surface and upper-air diagnostics follow the nominal 00/12 UTC snapshots.
+Surface diagnostics follow three-hourly snapshots; upper-air remains 00/12 UTC.
+Temporal diagnostics still require a 6–18-hour comparison interval, so they
+normally compare to the surface chart six hours earlier, not the immediately
+preceding three-hour chart. The actual interval is shown in each feature.
 For archived snapshots:
 `python scripts/build_observation_charts.py --reprocess --diagnostics-only`.
 Older snapshots without stored dew point cannot gain it through reprocessing;

@@ -27,13 +27,13 @@
   <header class="chart-header"><div class="eyebrow"><span></span> GLOBAL WEATHER OBSERVATIONS</div>
     <nav class="app-nav" aria-label="Application sections"><a href="index.html">Home</a><a href="aerodrome-forecast.html">Aerodrome Forecast</a><a href="storms.html">Storm systems</a><a href="ash.html">Volcanic Ash Advisories</a><a href="weather-analyzer.html">Weather Analyzer</a><a class="active" href="wafs.html">Observation Charts</a></nav>
     <h1>Surface &amp;<br /><em>Upper-air Charts</em></h1>
-    <p>Observed surface and upper-air charts at 00/12 UTC. Builds are requested at 00:30/12:30 UTC.</p>
+    <p>Surface observation charts every three hours; upper-air observations at 00/12 UTC. Builds are requested 30 minutes after each surface cycle.</p>
   </header>
   <section class="chart-stage" id="chartStage">
     <div id="observationMap" aria-label="Interactive surface and upper-air observation charts"></div>
     <div class="chart-controls">
       <details open><summary>CHART CONTROLS</summary>
-        <label>CHART TYPE<select id="chartKind"><option value="surface">Surface · 00/12 UTC</option><option value="upper">Upper air · 00/12 UTC</option></select></label>
+        <label>CHART TYPE<select id="chartKind"><option value="surface">Surface · every 3 hours</option><option value="upper">Upper air · 00/12 UTC</option></select></label>
         <div class="chart-pair"><label>PARAMETER<select id="chartField"><option value="pressure">Mean sea-level pressure</option><option value="wind">Wind</option><option value="temperature">Air temperature</option></select></label><label>PRESSURE LEVEL<select id="chartLevel" disabled><option value="925">925 hPa</option><option value="850" selected>850 hPa</option><option value="800">800 hPa</option><option value="700">700 hPa</option><option value="600">600 hPa</option><option value="500">500 hPa</option><option value="400">400 hPa</option><option value="300">300 hPa</option><option value="250">250 hPa</option><option value="200">200 hPa</option><option value="150">150 hPa</option><option value="100">100 hPa</option></select></label></div>
         <div class="chart-switches"><label><input id="showStations" type="checkbox" checked />Station plots</label><label><input id="showContours" type="checkbox" checked />Contours</label></div>
         <div class="chart-switches"><label><input id="showDiagnostics" type="checkbox" checked />Synoptic diagnostics</label></div>
@@ -68,6 +68,6 @@
   <p class="sounding-note">Background: brown dashed dry adiabats; blue dashed moist adiabats (liquid-water pseudoadiabatic approximation); green dotted mixing-ratio lines. Wind: half barb 5 kt, full barb 10 kt, flag 50 kt.</p>
   <details><summary>Reported pressure-level values</summary><div class="sounding-values"><table><thead><tr><th>hPa</th><th>T °C</th><th>Td °C</th><th>RH %</th><th>Wind kt</th><th>From °</th></tr></thead><tbody id="soundingTable"></tbody></table></div></details>
 </dialog>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="sounding-plot.js?v=20261013a"></script><script src="wafs.js?v=20261013temporal1"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="sounding-plot.js?v=20261013a"></script><script src="wafs.js?v=20261015threehour1"></script>
 </body>
 </html>

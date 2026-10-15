@@ -201,7 +201,7 @@
       featureData=detected; renderDiagnostics(); renderStations();
       const usable = points.filter((point) => Number.isFinite(point.properties[fieldName()])).length;
       const age = (Date.now() - Date.parse(chosen.valid_time)) / 3600000;
-      const stale = age > 18, degraded = chosen.feed_errors?.length > 0;
+      const stale = age > (kind === 'surface' ? 6 : 18), degraded = chosen.feed_errors?.length > 0;
       setStatus(utc(chosen.valid_time) + ' · ' + usable.toLocaleString() + ' reports with this parameter.' + (stale ? ' Older chart: a newer cycle has not been published.' : '') + (degraded ? ' Some source files were unavailable; coverage may be incomplete.' : ''), stale || degraded);
       $('chartSummary').textContent = 'Published: ' + utc(chosen.published_at) + ' · Observation window: ±' + chosen.window_minutes + ' minutes · ' + Object.entries(chosen.sources).map(([name, count]) => name + ': ' + count.toLocaleString()).join(' · ') + (kind === 'upper' ? ' (pressure-level observations' + (chosen.station_count ? ' from ' + chosen.station_count + ' sounding sites' : '') + ').' : ' · QNH-derived MSLP estimates: ' + (chosen.pressure_estimates || 0).toLocaleString() + '.');
     } catch (error) {
