@@ -55,6 +55,7 @@ class TemporalTests(unittest.TestCase):
             self.assertEqual(result['properties']['comparison_hours'],12)
             if flow:
                 self.assertTrue(any(f['properties']['feature_type']=='airmass' for f in result['features']))
+                self.assertTrue(any(f['properties']['feature_type']=='advection_region' for f in result['features']))
             sparse=enrich_temporal({'features':[front(displacement)],'properties':{}},rows[:3],grids,previous,old_rows,old_grids,
                                   '2026-10-13T12:00:00Z','2026-10-13T00:00:00Z')
             self.assertEqual(sparse['features'][0]['properties']['front_type'],'unclassified')
@@ -66,6 +67,29 @@ class TemporalTests(unittest.TestCase):
         result=enrich_temporal({'features':[front(3)],'properties':{}},rows,grids,
             {'features':[front(0),front(.1)]},rows,grids,'2026-10-13T12:00:00Z','2026-10-13T00:00:00Z')
         self.assertEqual(result['features'][0]['properties']['front_type'],'unclassified')
+
+    def test_midpoint_agreement_does_not_override_disagreeing_boundary(self):
+        def fields(offset):return {'temperature_c':lambda x,y:15+10*np.tanh(x-offset),
+            'dewpoint_c':lambda x,y:5+8*np.tanh(x-offset),
+            'u_ms':lambda x,y:np.where(y<14,-8,8),'v_ms':lambda x,y:np.zeros_like(x)}
+        rows,grids=fixture(fields(3));old_rows,old_grids=fixture(fields(0))
+        result=enrich_temporal({'features':[front(3)],'properties':{}},rows,grids,
+            {'features':[front(0)]},old_rows,old_grids,'2026-10-13T12:00:00Z','2026-10-13T00:00:00Z')
+        p=result['features'][0]['properties']
+        self.assertEqual(p['front_type'],'unclassified')
+        self.assertLess(p['classification_agreement'],.75)
+
+    def test_repeated_vertices_are_not_independent_front_samples(self):
+        def fields(offset):return {'temperature_c':lambda x,y:15+10*np.tanh(x-offset),
+            'dewpoint_c':lambda x,y:5+8*np.tanh(x-offset),
+            'u_ms':lambda x,y:np.full_like(x,8),'v_ms':lambda x,y:np.zeros_like(x)}
+        rows,grids=fixture(fields(3));old_rows,old_grids=fixture(fields(0))
+        short=front(3);short['geometry']['coordinates']=[[3,15]]*10
+        result=enrich_temporal({'features':[short],'properties':{}},rows,grids,
+            {'features':[front(0)]},old_rows,old_grids,'2026-10-13T12:00:00Z','2026-10-13T00:00:00Z')
+        p=result['features'][0]['properties']
+        self.assertEqual(p['front_type'],'unclassified')
+        self.assertEqual(p['classification_sample_count'],1)
 
 
 if __name__=='__main__': unittest.main()

@@ -168,11 +168,23 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
             features.append({'type':'Feature','geometry':{'type':'LineString','coordinates':np.round(smooth(line),4).tolist()},
                              'properties':properties(type_,label,a,b,evidence,**extra)})
 
+    def grid(name):
+        item=grids.get(name)
+        return (np.asarray(item[2].filled(0))[:,:-1],~np.ma.getmaskarray(item[2])[:,:-1]) if item is not None else (None,None)
+    u,umask=grid('u_ms'); v,vmask=grid('v_ms')
+    wind_valid=np.zeros_like(valid); shear=None; convergence=None
+    if u is not None and v is not None:
+        wind_valid,wind_count,wind_nearest=support(rows,'u_ms',x,y,upper)
+        wind_valid=binary_erosion(wind_valid & umask & vmask,iterations=2)
+        ux,uy=gradients(u,x,y); vx,vy=gradients(v,x,y)
+        shear=(vx-uy)*np.sign(y)[:,None]; convergence=-(ux+vy)
     if valid.any():
         for ridge in (False,True):
             mask=axis_mask(z,valid,x,y,ridge) & ((residual> (15 if upper else .8)) if ridge else (residual<(-15 if upper else -.8)))
+            if ridge and not upper:
+                mask &= wind_valid & ((shear < -3e-6) | (convergence < -3e-6)) if shear is not None else False
             add_lines(mask,'ridge' if ridge else 'trough',('Upper-air ' if upper else 'Surface ')+('ridge' if ridge else 'trough'),
-                      ['Transverse '+('height' if upper else 'pressure')+' extremum','Broad-field anomaly; surrounding reports'],500 if upper else 350)
+                      ['Transverse '+('height' if upper else 'pressure')+' extremum','Broad-field anomaly; surrounding reports']+(['Anticyclonic vorticity or divergent-flow support'] if ridge and not upper else []),500 if upper else 350)
     centers=[]
     if not upper and valid.any():
         for high in (False,True):
@@ -190,14 +202,8 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
                 if not high: centers.append((a,b,feature))
                 if len(accepted)>=30: break
 
-    def grid(name):
-        item=grids.get(name)
-        return (np.asarray(item[2].filled(0))[:,:-1],~np.ma.getmaskarray(item[2])[:,:-1]) if item is not None else (None,None)
-    u,umask=grid('u_ms'); v,vmask=grid('v_ms')
     fronts=[]
     if u is not None and v is not None:
-        wind_valid,wind_count,wind_nearest=support(rows,'u_ms',x,y,upper)
-        wind_valid=binary_erosion(wind_valid & umask & vmask,iterations=2)
         if upper and level in (300,250,200):
             speed=np.hypot(u,v)*1.94384449
             jet=axis_mask(speed,wind_valid,x,y,True,(u,v)) & (speed>=60)
@@ -206,19 +212,37 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
             count,nearest=old_count,old_nearest
         elif not upper:
             t,tmask=grid('temperature_c'); td,tdmask=grid('dewpoint_c')
-            if t is not None and td is not None:
+            theta,thetamask=grid('theta_k'); theta_e,thetaemask=grid('theta_e_k')
+            if t is not None and td is not None and theta is not None and theta_e is not None:
                 tdvalid,_,_=support(rows,'dewpoint_c',x,y)
-                tx,ty=gradients(t,x,y); dx,dy=gradients(td,x,y)
-                ux,uy=gradients(u,x,y); vx,vy=gradients(v,x,y)
+                thvalid,_,_=support(rows,'theta_k',x,y); thevalid,_,_=support(rows,'theta_e_k',x,y)
+                tx,ty=gradients(theta,x,y); dx,dy=gradients(theta_e,x,y)
                 tg,dg=np.hypot(tx,ty),np.hypot(dx,dy)
-                hemisphere=np.sign(y)[:,None]
-                shear=(vx-uy)*hemisphere
-                convergence=-(ux+vy)
                 alignment=(tx*dx+ty*dy)/np.maximum(tg*dg,1e-12)
-                mask=valid & wind_valid & binary_erosion(tdvalid&tmask&tdmask,iterations=2) & (tg>=1.5e-5) & (dg>=1.5e-5) & (alignment>=.5) & ((shear>=.8e-5)|(convergence>=.5e-5)) & (residual<=-.8)
+                # Cross-boundary wind shift sampled ~100 km on both sides.
+                nx,ny=tx/np.maximum(tg,1e-12),ty/np.maximum(tg,1e-12)
+                from scipy.ndimage import map_coordinates
+                aa,bb=np.indices(t.shape); di=ny*100/(111.195*(y[1]-y[0]));dj=nx*100/(111.195*(x[1]-x[0])*np.maximum(.2,np.cos(np.radians(y)))[:,None])
+                us=[];vs=[];side_support=np.ones_like(valid)
+                for sign in (-1,1):
+                    coords=np.array([aa+sign*di,bb+sign*dj])
+                    us.append(map_coordinates(u,coords,order=1,mode='nearest'));vs.append(map_coordinates(v,coords,order=1,mode='nearest'))
+                    side_support &= map_coordinates(wind_valid.astype(float),coords,order=0,mode='nearest')>.5
+                angle=np.arccos(np.clip((us[0]*us[1]+vs[0]*vs[1])/np.maximum(np.hypot(us[0],vs[0])*np.hypot(us[1],vs[1]),1e-9),-1,1))
+                shift=(angle>=math.radians(30))&(np.hypot(us[0],vs[0])>=2)&(np.hypot(us[1],vs[1])>=2)
+                mask=valid & wind_valid & side_support & binary_erosion(tdvalid&thvalid&thevalid&tmask&tdmask&thetamask&thetaemask,iterations=2) & (tg>=1.5e-5) & (dg>=3e-5) & (alignment>=.5) & shift & ((shear>=.8e-5)|(convergence>=.5e-5))
                 before=len(features)
-                add_lines(mask,'front','Potential frontal boundary', ['Temperature and dew-point gradients ≥1.5 °C/100 km','Aligned thermal/moisture gradients','Wind shear/convergence with pressure-trough support'],250)
+                add_lines(mask,'front','Potential frontal boundary', ['Potential-temperature gradient ≥1.5 K/100 km and theta-e gradient ≥3 K/100 km','Aligned thermal/moisture boundary plus ≥30° cross-boundary wind shift','Cyclonic shear/convergence; deep pressure trough is not required','Terrain/coast/heating artifacts remain possible; temporal classification requires further agreement'],250)
                 fronts=features[before:]
+                # Suppress only genuinely overlapping ridge segments on this
+                # supported frontal ribbon; don't exclude nearby real ridges.
+                for feature in list(features):
+                    if feature['properties']['feature_type']!='ridge':continue
+                    line=feature['geometry']['coordinates']; overlap=0
+                    for lon,lat in line:
+                        a=int(np.argmin(abs(y-lat)));b=int(np.argmin(abs(x-lon)))
+                        overlap+=bool(mask[a,b])
+                    if overlap>len(line)*.3:features.remove(feature)
             # Diagnose circulation around each low from actual reports, not
             # interpolation alone. Do not infer cyclone type from latitude.
             for a,b,low in centers:
@@ -236,27 +260,14 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
                     reports.append(row)
                 if len(reports)<6 or len(sectors)<3 or np.mean(np.array(tangential)>0)<.7 or np.mean(tangential)<2: continue
                 near_front=any(min(distance_km(point,p) for p in f['geometry']['coordinates'])<600 for f in fronts)
-                thermal=[]
-                for pressure in (850,500,200):
-                    core=[]; outer=[]
-                    for row in upper_rows or []:
-                        if row.get('level_hpa')!=pressure or row.get('temperature_c') is None: continue
-                        if row.get('observed_at') and rows and rows[0].get('observed_at'):
-                            age=(datetime.fromisoformat(valid_time or rows[0]['observed_at'])-datetime.fromisoformat(row['observed_at'])).total_seconds()
-                            if not 0<=age<=12*3600: continue
-                        dist=distance_km(point,[row['longitude'],row['latitude']])
-                        if dist<=400: core.append(row['temperature_c'])
-                        elif 600<=dist<=1200: outer.append(row['temperature_c'])
-                    if len(core)>=3 and len(outer)>=6: thermal.append(np.mean(core)-np.mean(outer))
-                warm=len(thermal)>=2 and min(thermal)>=2
-                type_='extratropical' if near_front else 'tropical' if warm else 'cyclone'
-                label={'extratropical':'Possible extratropical cyclone','tropical':'Warm-core cyclone candidate','cyclone':'Cyclonic system — type uncertain'}[type_]
+                from cyclone_environment import assess_cyclone
+                assessment=assess_cyclone(point,upper_rows,valid_time or (rows[0].get('observed_at') if rows else None),near_front,float(vx[a,b]-uy[a,b]) if wind_valid[a,b] else None)
+                type_,label_=assessment.pop('feature_type'),assessment.pop('label')
                 evidence=['Pressure minimum','Cyclonic tangential winds at ≥70% of surrounding reports',f'{len(reports)} wind reports in {len(sectors)} quadrants']
                 if near_front: evidence.append('Nearby independently detected frontal boundary')
-                if warm: evidence.append('Warm anomaly ≥2 °C at ≥2 sampled pressure levels')
-                if type_=='tropical': evidence.append('Convection unassessed; tropical-cyclone status NOT established')
-                features.append({'type':'Feature','geometry':low['geometry'],'properties':properties(type_,label,a,b,evidence,central_pressure_hpa=low['properties']['central_pressure_hpa'])})
-    return {'type':'FeatureCollection','features':features,'properties':{'method':'Experimental observation-supported diagnostics v1',
+                evidence+=assessment.pop('evidence')
+                features.append({'type':'Feature','geometry':low['geometry'],'properties':properties(type_,label_,a,b,evidence,central_pressure_hpa=low['properties']['central_pressure_hpa'],**assessment)})
+    return {'type':'FeatureCollection','features':features,'properties':{'method':'Experimental observation-supported diagnostics v3',
              'status':'Dew point available' if any(r.get('dewpoint_c') is not None for r in rows) else 'No dew point: front detection unavailable',
              'front_classification':'Candidate boundaries only; cold/warm/occluded type not established',
              'jet_threshold_kt':60,'feature_count':len(features)}}

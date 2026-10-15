@@ -66,7 +66,7 @@ def enrich_temporal(current, rows, grids, previous, previous_rows, previous_grid
             status['temporal_status'] = 'Incompatible grids; no temporal classification'
             return current
     def arrays(source):
-        return {k: np.asarray(source[k][2].filled(np.nan))[:, :-1] for k in required}
+        return {k: np.asarray(source[k][2].astype(float).filled(np.nan))[:, :-1] for k in required}
     now, old = arrays(grids), arrays(previous_grids)
     valid = np.ones(now['temperature_c'].shape, bool)
     for key in required:
@@ -117,13 +117,52 @@ def enrich_temporal(current, rows, grids, previous, previous_rows, previous_grid
         flow = (now['u_ms'][a,b]*nx+now['v_ms'][a,b]*ny)*1.94384449
         contrast = magnitude*200000
         type_ = classify_front(speed, flow, current_t-previous_t, contrast)
+        # Require agreement along the boundary, not one convenient midpoint.
+        votes=[]; sampled_cells=set()
+        for fraction in (.2,.35,.5,.65,.8):
+            pt=line[min(len(line)-1,int((len(line)-1)*fraction))];sa,sb=cell(pt)
+            if not valid[sa,sb] or (sa,sb) in sampled_cells:continue
+            sampled_cells.add((sa,sb))
+            match=nearest_on_line(pt,previous_fronts[index]['geometry']['coordinates'])
+            if match is None or match[0]>min(650,hours*70):continue
+            prior_pt=match[1];before_t=sample('temperature_c',prior_pt,old);after_t=sample('temperature_c',prior_pt)
+            magnitude_=math.hypot(tx[sa,sb],ty[sa,sb])
+            if before_t is None or after_t is None or magnitude_<1e-5:continue
+            sx,sy=tx[sa,sb]/magnitude_,ty[sa,sb]/magnitude_
+            east_=((pt[0]-prior_pt[0]+180)%360-180)*111.195*math.cos(math.radians(pt[1]));north_=(pt[1]-prior_pt[1])*111.195
+            speed_=(east_*sx+north_*sy)/hours/1.852;flow_=(now['u_ms'][sa,sb]*sx+now['v_ms'][sa,sb]*sy)*1.94384449
+            votes.append(classify_front(speed_,flow_,after_t-before_t,magnitude_*200000))
+        agreement=votes.count(type_)/len(votes) if votes else 0
+        if len(votes)<3 or agreement<.75:type_='unclassified'
         p.update(front_type=type_, label=(type_.capitalize()+' front candidate') if type_!='unclassified' else 'Unclassified front candidate',
                  normal_motion_kt=round(speed,1), normal_flow_kt=round(flow,1), temperature_change_c=round(current_t-previous_t,1),
-                 normal_to_warm_deg=round(math.degrees(math.atan2(nx,ny))%360))
+                 normal_to_warm_deg=round(math.degrees(math.atan2(nx,ny))%360),classification_sample_count=len(votes),classification_agreement=round(agreement,2))
         p['evidence'] += [f'Matched boundary {distance:.0f} km away, {hours:g} hours earlier',
                           f'Normal motion toward warmer air: {speed:.1f} kt; normal wind: {flow:.1f} kt',
                           f'Temperature change at prior boundary: {current_t-previous_t:+.1f} °C',
-                          'Heuristic classification; 12-hour data can alias frontal development and daily heating']
+                          f'Along-boundary agreement: {agreement:.0%} across {len(votes)} supported samples (minimum 3 and 75%)',
+                          'Heuristic classification; surface heating, coastlines and time sampling can still mimic frontal changes']
+        # Check cross-front temperature at available lower-tropospheric sites.
+        lower_sides={level:[{},{}] for level in (850,925)}
+        for row in upper_rows or []:
+            if row.get('level_hpa') not in (850,925) or row.get('temperature_c') is None:continue
+            try:age=(datetime.fromisoformat(current_time)-datetime.fromisoformat(row['observed_at'])).total_seconds()
+            except (KeyError,ValueError,TypeError):continue
+            if not 0<=age<=12*3600 or distance_km(mid,[row['longitude'],row['latitude']])>500:continue
+            east_=((row['longitude']-mid[0]+180)%360-180)*math.cos(math.radians(mid[1]));north_=row['latitude']-mid[1]
+            side=int(east_*nx+north_*ny>0)
+            theta_=(row['temperature_c']+273.15)*(1000/row['level_hpa'])**.2854
+            lower_sides[row['level_hpa']][side][(row['latitude'],row['longitude'])]=theta_
+        contrasts=[float(np.mean(list(sides[1].values()))-np.mean(list(sides[0].values()))) for sides in lower_sides.values() if all(len(side)>=3 for side in sides)]
+        if contrasts:
+            contrast_=min(contrasts)
+            p['lower_level_theta_contrast_k']=round(contrast_,1)
+            if contrast_<1:
+                p.update(front_type='unclassified',label='Unclassified front candidate',confidence='limited')
+                p['evidence'].append('Lower-tropospheric thermal contrast does not confirm the surface boundary')
+            else:p['evidence'].append('Available lower-tropospheric potential-temperature contrast supports surface orientation')
+        else:
+            p['confidence']='limited';p['evidence'].append('Insufficient lower-tropospheric soundings to confirm vertical frontal structure')
         # Occlusion is NOT inferred merely because a front is near a low.
         nearby_types = {f['properties'].get('front_type') for f in previous_fronts
                          if (match := nearest_on_line(mid, f['geometry']['coordinates'])) and match[0] <= 300}
@@ -136,16 +175,40 @@ def enrich_temporal(current, rows, grids, previous, previous_rows, previous_grid
         elevated=[]
         for sign in (-1,0,1):
             pt=offset(sign)
-            reports=[r['temperature_c'] for r in upper_rows or [] if r.get('level_hpa')==850 and r.get('temperature_c') is not None
-                     and distance_km(pt,[r['longitude'],r['latitude']])<=150]
-            elevated.append(float(np.mean(reports)) if len(reports)>=3 else None)
+            reports={}
+            for r in upper_rows or []:
+                if r.get('level_hpa')!=850 or r.get('temperature_c') is None or distance_km(pt,[r['longitude'],r['latitude']])>150:continue
+                try:age=(datetime.fromisoformat(current_time)-datetime.fromisoformat(r['observed_at'])).total_seconds()
+                except (KeyError,ValueError,TypeError):continue
+                if 0<=age<=12*3600:reports[(r['latitude'],r['longitude'])]=r['temperature_c']
+            elevated.append(float(np.mean(list(reports.values()))) if len(reports)>=3 else None)
         warm_aloft = all(v is not None for v in elevated) and elevated[1]>=max(elevated[0],elevated[2])+2
-        if occlusion_supported(nearby_types, near_low, cool_both, warm_aloft):
+        if len(votes)>=3 and agreement>=.75 and not (contrasts and min(contrasts)<1) and occlusion_supported(nearby_types, near_low, cool_both, warm_aloft):
             p.update(front_type='occluded', label='Occluded front candidate')
             p['evidence'].append('Prior cold/warm arms near low; warm tongue aloft between cooler surface sides')
     # Sparse arrows visualize diagnosed advection, NOT traced parcel trajectories.
     advection=-(now['u_ms']*tx+now['v_ms']*ty)*86400
     moisture=-(now['u_ms']*dx+now['v_ms']*dy)*86400
+    region_valid=valid&(np.hypot(now['u_ms'],now['v_ms'])>=2)&(np.hypot(now['u_ms'],now['v_ms'])<=50)
+    from airmass_regions import region_polygons
+    for warming in (False,True):
+        for moistening in (False,True):
+            mask=region_valid&((advection>=2) if warming else (advection<=-2))&((moisture>=0) if moistening else (moisture<0))
+            if not mask.any():continue
+            props={'feature_type':'advection_region','label':('Warm' if warming else 'Cold')+' advection / '+('moistening' if moistening else 'drying'),
+                'warming':warming,'moistening':moistening,'previous_time':previous_time,'comparison_hours':hours,
+                'mean_temperature_advection_c_day':round(float(np.mean(advection[mask])),1),
+                'mean_temperature_change_c':round(float(np.mean((now['temperature_c']-old['temperature_c'])[mask])),1),
+                'evidence':[f'Comparison interval: {hours:g} hours','Area has |thermal advection| ≥2 °C/day; moisture tendency gives the secondary class',
+                            'Advection process, not a distinct source air mass; actual temperature changes may differ because of heating/mixing']}
+            current['features'].extend(region_polygons(mask,x,y,props))
+    # Moisture-dominated regions are kept, rather than omitted when thermal
+    # advection is weak. They use a neutral thermal class.
+    for moistening in (False,True):
+        mask=region_valid&(abs(advection)<2)&((moisture>=2) if moistening else (moisture<=-2))
+        if mask.any():current['features'].extend(region_polygons(mask,x,y,{'feature_type':'advection_region',
+            'label':('Moistening' if moistening else 'Drying')+' advection / weak thermal advection','warming':None,'moistening':moistening,
+            'previous_time':previous_time,'comparison_hours':hours,'evidence':['|Dew-point advection| ≥2 °C/day, |thermal advection| <2 °C/day','Wind-guided process; not a tracked parcel']}))
     added=0
     for a in range(4,len(y)-4,8):
       for b in range(0,len(x),8):

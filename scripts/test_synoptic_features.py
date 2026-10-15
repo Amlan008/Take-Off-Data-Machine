@@ -56,6 +56,7 @@ class DiagnosticsTests(unittest.TestCase):
     def test_multiple_supported_front_indicators_produce_candidate_boundary(self):
         rows,grids=fixture({'mslp_hpa':lambda x,y:1000+1.5*x*x,'temperature_c':lambda x,y:15+10*np.tanh(x),
                            'dewpoint_c':lambda x,y:5+8*np.tanh(x),
+                           'theta_k':lambda x,y:290+10*np.tanh(x),'theta_e_k':lambda x,y:310+20*np.tanh(x),
                            'u_ms':lambda x,y:-8*np.tanh(x),'v_ms':lambda x,y:6*np.tanh(x)})
         result=diagnose(rows,grids,'surface')
         fronts=[f for f in result['features'] if f['properties']['feature_type']=='front']
@@ -97,11 +98,12 @@ class DiagnosticsTests(unittest.TestCase):
             for lat,lon in ((22,0),(8,0),(15,7),(15,-7),(21,4),(9,-4)):
                 soundings.append(dict(latitude=lat,longitude=lon,level_hpa=level,temperature_c=temp-3,observed_at='2026-10-13T00:00:00Z'))
         result=diagnose(rows,grids,'surface',upper_rows=soundings)
-        tropical=[f for f in result['features'] if f['properties']['feature_type']=='tropical']
-        self.assertTrue(tropical)
-        self.assertTrue(any('Convection unassessed' in text for text in tropical[0]['properties']['evidence']))
+        warm=[f for f in result['features'] if f['properties']['feature_type']=='warm_core']
+        self.assertTrue(warm)
+        self.assertEqual(warm[0]['properties']['tropical_status'],'not_established')
+        self.assertEqual(warm[0]['properties']['gray_factors']['ocean_heat']['state'],'unavailable')
         for row in soundings: row['observed_at']='2026-10-12T00:00:00Z'
-        self.assertFalse(any(f['properties']['feature_type']=='tropical' for f in diagnose(rows,grids,'surface',upper_rows=soundings)['features']))
+        self.assertFalse(any(f['properties']['feature_type'] in ('tropical','warm_core') for f in diagnose(rows,grids,'surface',upper_rows=soundings)['features']))
 
 
 if __name__=='__main__': unittest.main()

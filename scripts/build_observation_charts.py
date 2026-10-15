@@ -33,6 +33,7 @@ if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 from synoptic_features import diagnose, wind_components
 from temporal_diagnostics import enrich_temporal
+from airmass_regions import prepare_thermodynamics, air_mass_regions
 UTC = timezone.utc
 LEVELS = (925, 850, 800, 700, 600, 500, 400, 300, 250, 200, 150, 100)
 MADIS = 'https://madis-data.ncep.noaa.gov/madisPublic1/data/point/'
@@ -511,11 +512,12 @@ def write_json(path, value):
 
 
 def diagnostic_grids(rows, kind, primary=None):
+    if kind == 'surface': prepare_thermodynamics(rows)
     eligible = rows if kind == 'upper' else [row for row in rows if (row.get('elevation_m') or 0) <= 800]
     radius = 2000 if kind == 'upper' else 1500
     field = 'height_m' if kind == 'upper' else 'mslp_hpa'
     result = {field: primary if kind == 'upper' else analysis_grid(eligible, field, 2000)}
-    for name in ('u_ms', 'v_ms', 'temperature_c', 'dewpoint_c'):
+    for name in ('u_ms', 'v_ms', 'temperature_c', 'dewpoint_c') + (('theta_k', 'theta_e_k', 'mixing_ratio_gkg') if kind == 'surface' else ()):
         result[name] = analysis_grid(eligible, name, radius)
     return result
 
@@ -581,6 +583,9 @@ def build_chart(output, kind, target, rows, errors, upper_context=None, diagnost
             previous, previous_rows, previous_grids, previous_time=previous_surface(output,target)
             diagnostic=enrich_temporal(diagnostic,rows,grids,previous,previous_rows,previous_grids,iso(target),previous_time,
                                        upper_context if upper_context is not None else sounding_context(output,target))
+            diagnostic['features'].extend(air_mass_regions(rows,grids,iso(target)))
+            diagnostic['properties']['feature_count']=len(diagnostic['features'])
+            diagnostic['properties']['method']='Experimental observation-supported diagnostics v3; thermodynamic regions and Gray-style factor checklist'
             diagnostic['properties']['valid_time'] = iso(target)
             write_json(folder / 'features.geojson', diagnostic)
     else:
@@ -695,7 +700,7 @@ def main():
                 updated.append(result)
                 print(f'Reprocessed {kind} {entry["path"]}: {len(rows)} reports', flush=True)
             manifest[kind] = updated
-        manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=2)
+        manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=3)
         write_json(path, manifest)
         return
     try:
@@ -726,7 +731,7 @@ def main():
     surface_rows, upper_rows = deduplicate(surface_rows, surface), deduplicate(upper_rows, upper)
     path = args.output / 'manifest.json'
     previous = json.loads(path.read_text()) if path.exists() else {}
-    manifest = {'version': 1, 'analysis_version': 2, 'diagnostics_version': 2, 'generated_at': iso(now), 'pressure_policy': policy,
+    manifest = {'version': 1, 'analysis_version': 2, 'diagnostics_version': 3, 'generated_at': iso(now), 'pressure_policy': policy,
                 'levels_hpa': list(LEVELS), 'surface': previous.get('surface', []), 'upper': previous.get('upper', [])}
     succeeded = []
     for kind, target, rows, errors, minimum in [('surface', surface, surface_rows, surface_errors, 100), ('upper', upper, upper_rows, upper_errors, 30)]:

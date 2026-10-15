@@ -33,6 +33,24 @@ The existing `wafs.html` URL now opens **Observation Charts**. The associated
   push is used. This helps fetch/publish failures but cannot recover a cron
   event that GitHub never starts. No additional trigger times were added.
 
+## Deploying diagnostics v3
+
+Upload the updated `wafs.html`, `wafs.js`, `.github/workflows/gfs-hazards.yml`,
+`scripts/build_observation_charts.py`, `scripts/synoptic_features.py`,
+`scripts/temporal_diagnostics.py`, and their updated synoptic/temporal tests.
+Also add the new `scripts/airmass_regions.py`, `scripts/cyclone_environment.py`
+and `scripts/test_region_diagnostics.py`. Preserve the existing requirements
+file and other builder dependencies. No Worker, credential or cron change is
+needed for this diagnostic update.
+
+Publishing diagnostic-source changes to `main` automatically starts the chart
+workflow to generate v3 feature files. Generated chart commits do not retrigger
+this source-only push rule. Manual workflow dispatch remains available.
+Existing feature files do not acquire new regions/checklists merely by updating
+the page; the UI relabels legacy tropical candidates as unconfirmed warm-core
+lows while waiting for regenerated data. Diagnostics remain experimental:
+regression tests verify rules, not forecast skill against labelled analyses.
+
 ## Data and pressure policy
 
 NOAA MADIS public hourly METAR and maritime NetCDF files provide land and marine
@@ -166,25 +184,42 @@ coverage-mask edges and poleward of 75°. These limits deliberately leave gaps.
   broad smoothed field, centres separated by 400 km.
 - Trough/ridge axes: transverse pressure/height curvature and departures from
   the broad field; minimum length 350 km at the surface, 500 km aloft.
+  Surface ridges additionally require supported anticyclonic vorticity or
+  divergence; axes substantially overlapping an independently detected front
+  are suppressed. Pressure curvature alone does not establish a ridge.
 - Jet candidates: coherent wind-speed ridge at 300/250/200 hPa, ≥60 kt,
   minimum length 600 km, wind aligned with the axis. Arrows show air motion,
   not jet-system propagation; maxima are analysed values, not exact jet cores.
-- Potential fronts: aligned temperature AND dew-point gradients ≥1.5 °C/100 km,
-  cyclonic shear ≥0.8×10⁻⁵ s⁻¹ or convergence ≥0.5×10⁻⁵ s⁻¹, pressure-trough
-  anomaly ≤−0.8 hPa and at least 250 km continuous length. Temporal candidates
+- Potential fronts: aligned potential-temperature and equivalent-potential-
+  temperature gradients ≥1.5 and ≥3 K/100 km respectively, supported wind
+  shifts ≥30° across the boundary, cyclonic shear ≥0.8×10⁻⁵ s⁻¹ or convergence
+  ≥0.5×10⁻⁵ s⁻¹, and at least 250 km continuous length. A deep pressure trough
+  is not required. Temporal candidates
   compare the latest strictly older snapshot 6–18 hours earlier, on compatible
   grids supported by both analyses. Missing or ambiguous matches stay unclassified.
   A cold candidate requires normal advance toward warmer air >5 kt, agreeing
   normal flow >2 kt, and cooling at the previous boundary ≥1 °C. Warm candidates
   reverse these signs. Stationary candidates require normal movement/flow ≤5 kt
   and temperature change <2 °C. All require ≥2 °C thermal contrast.
+  At least three supported samples along the boundary and ≥75% agreement
+  are required. Available fresh 925/850 hPa soundings provide a separate
+  potential-temperature contrast check; contradictory vertical evidence keeps
+  the boundary unclassified. Missing vertical evidence limits confidence.
   Occlusion candidates additionally require previous cold/warm arms within
   300 km, a low within 400 km, cooler surface temperatures on both sides of a
   warm tongue, and a ≥2 °C warm tongue at 850 hPa supported by ≥3 nearby soundings
   per sampling region. This deliberately restrictive heuristic can miss fronts;
   no official frontal analysis is claimed. Surface heating and 12-hour temporal
   aliasing can still mislead classification.
-- Air-mass layer: wind-guided thermal and dew-point advection from supported
+- Air-mass regions: connected, observation-supported surface potential-
+  temperature bins (<285, 285–300, 300–315 and ≥315 K), divided at 6 g/kg
+  mixing ratio into drier/moister regions. These fixed exploratory bins are
+  not universal air-mass definitions or maritime/continental source attribution.
+  Station pressure is required or explicitly estimated at modest elevations;
+  QNH/MSLP is never directly substituted for elevated sensor pressure. Small
+  islands and unsupported gaps are excluded; region opacity is adjustable.
+- Separately selectable advection regions and optional flow arrows show
+  wind-guided thermal and dew-point advection from supported
   gradients, together with actual T/Td changes over the comparison interval.
   Sparse red/blue arrows depict warming/cooling advection, not Lagrangian parcel
   tracks or maritime/continental source attribution. Only |thermal or dew-point
@@ -193,12 +228,22 @@ coverage-mask edges and poleward of 75°. These limits deliberately leave gaps.
 - Cyclonic systems: pressure low with ≥6 actual wind reports in ≥3 quadrants
   100–600 km away; ≥70% have cyclonic tangential winds, mean tangential speed
   >2 m/s. A nearby detected front supports a **possible extratropical** label.
-  Without that, a ≥2 °C core-vs-surroundings warm anomaly at ≥2 of 850/500/200
-  hPa supports a **warm-core candidate**: each level needs ≥3 core soundings
+  Without that, a ≥2 °C warm anomaly at 850 hPa and at least one of 500/200
+  hPa supports a **warm-core low, type uncertain**: each level needs ≥3 core soundings
   within 400 km and ≥6 background soundings 600–1200 km away, no more than
-  12 hours old. Convection is unassessed, so tropical-cyclone status is NOT
+  12 hours old, with background soundings in ≥3 quadrants. Background
+  temperature is detrended against latitude/longitude before assessing the
+  core, avoiding a simple meridional-gradient bias. Convection is unassessed,
+  so tropical-cyclone status is NOT
   established. Otherwise the type remains uncertain. Latitude alone does not
   classify the cyclone.
+  No automatic tropical classification is emitted, at any latitude. Above
+  40° absolute latitude an explicit caution is shown. Each low has a Gray-style
+  environmental checklist: Coriolis, cyclonic vorticity, co-located 850–200 hPa
+  wind shear, mid-level humidity and a lower-to-middle-level theta-e instability
+  proxy. Ocean temperature/heat depth and organized convection are unavailable.
+  This is neither Gray's seasonal genesis index nor a calibrated probability,
+  and favorable factors do not establish an existing tropical cyclone.
 
 All thresholds are initial unvalidated heuristics, not calibrated probabilities.
 “Moderate” versus “limited” denotes observation support (≥10 versus 6–9 local

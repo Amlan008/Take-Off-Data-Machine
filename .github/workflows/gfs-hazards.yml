@@ -1,6 +1,20 @@
 name: Build surface and upper-air observation charts
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gfs-hazards.yml'
+      - 'requirements-observation-charts.txt'
+      - 'scripts/build_observation_charts.py'
+      - 'scripts/synoptic_features.py'
+      - 'scripts/temporal_diagnostics.py'
+      - 'scripts/airmass_regions.py'
+      - 'scripts/cyclone_environment.py'
+      - 'scripts/test_observation_charts.py'
+      - 'scripts/test_synoptic_features.py'
+      - 'scripts/test_temporal_diagnostics.py'
+      - 'scripts/test_region_diagnostics.py'
   workflow_dispatch:
     inputs:
       observation_time:
@@ -36,6 +50,7 @@ jobs:
           python scripts/test_observation_charts.py
           python scripts/test_synoptic_features.py
           python scripts/test_temporal_diagnostics.py
+          python scripts/test_region_diagnostics.py
       - name: Build surface, upper-air and synoptic diagnostics
         shell: bash
         env:
