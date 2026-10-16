@@ -31,7 +31,10 @@ def prepare_thermodynamics(rows):
             method='approximate_station_pressure_from_mslp_temperature_elevation'
         values=thermodynamics(row.get('temperature_c'),row.get('dewpoint_c'),p)
         for key in ('theta_k','theta_e_k','mixing_ratio_gkg'): row[key]=values[key] if values else None
-        row['thermodynamic_pressure_method']=method if values else 'unavailable'
+        t=row.get('temperature_c')
+        if t is not None and p is not None and math.isfinite(t) and math.isfinite(p) and -100<t<60 and 500<=p<=1100:
+            row['theta_k']=(t+273.15)*(1000/p)**.2854
+        row['thermodynamic_pressure_method']=method if row['theta_k'] is not None else 'unavailable'
     return rows
 
 

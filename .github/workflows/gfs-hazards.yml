@@ -15,6 +15,15 @@ on:
       - 'scripts/test_synoptic_features.py'
       - 'scripts/test_temporal_diagnostics.py'
       - 'scripts/test_region_diagnostics.py'
+      - 'scripts/diagnostic_math.py'
+      - 'scripts/boundary_diagnostics.py'
+      - 'scripts/feature_tracking.py'
+      - 'scripts/replay_observation_case.py'
+      - 'scripts/test_refinement.py'
+      - 'scripts/test_chart_archive.mjs'
+      - 'chart-review.js'
+      - 'scripts/test_chart_review.mjs'
+      - 'chart-archive.js'
   workflow_dispatch:
     inputs:
       observation_time:
@@ -51,6 +60,9 @@ jobs:
           python scripts/test_synoptic_features.py
           python scripts/test_temporal_diagnostics.py
           python scripts/test_region_diagnostics.py
+          python scripts/test_refinement.py
+          node scripts/test_chart_archive.mjs
+          node scripts/test_chart_review.mjs
       - name: Build surface, upper-air and synoptic diagnostics
         shell: bash
         env:

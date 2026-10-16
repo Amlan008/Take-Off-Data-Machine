@@ -7,7 +7,7 @@
   map.createPane('diagnosticAreas'); map.getPane('diagnosticAreas').style.zIndex = 375;
   const shading = L.layerGroup().addTo(map), stations = L.layerGroup().addTo(map), contours = L.layerGroup().addTo(map);
   const diagnostics = L.layerGroup().addTo(map);
-  let featureData = null;
+  let featureData = null, downloadingArchive=false;
   const featureColors = { high:'#165aba',low:'#b92535',trough:'#b92535',ridge:'#165aba',front:'#d57213',jet:'#742bc1',cyclone:'#96500d',warm_core:'#b5267d',tropical:'#b5267d',extratropical:'#4f458f' };
   const thermalColors={cold:'#2465c4',cool:'#39aeb8',warm:'#ee9a35',hot:'#cb333e'};
   let regionOpacity=.24;
@@ -46,14 +46,15 @@
   }
   const root = 'assets/observation-charts';
   let manifest, points = [], activeMetadata, requestId = 0, loadingManifest = false;
+  const review=ChartReview.create({map,panel:$('chartReview'),read:path=>json(path),contextURL:location.href});
   const cache = new Map();
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const utc = (value) => value ? new Date(value).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'Unavailable';
   const fmt = (value, units) => Number.isFinite(value) ? value.toFixed(1) + ' ' + units : 'Unavailable';
   const setStatus = (message, error = false) => { $('chartStatus').textContent = message; $('chartStatus').classList.toggle('error', error); };
   function entries() { return manifest?.[$('chartKind').value] || []; }
-  function fieldName() { return { pressure: 'mslp_hpa', height: 'height_m', wind: 'wind_kt', temperature: 'temperature_c' }[$('chartField').value]; }
-  function unit() { return { pressure: 'hPa', height: 'm', wind: 'kt', temperature: '°C' }[$('chartField').value]; }
+  function fieldName() { return { pressure: 'mslp_hpa', 'pressure-tendency':'pressure_change_hpa_3h', height: 'height_m', wind: 'wind_kt', temperature: 'temperature_c' }[$('chartField').value]; }
+  function unit() { return { pressure: 'hPa', 'pressure-tendency':'hPa/3h', height: 'm', wind: 'kt', temperature: '°C' }[$('chartField').value]; }
 
   // Meteorological barb: staff points toward the direction FROM which the wind blows.
   function barb(speed, direction, marine) {
@@ -107,12 +108,17 @@
     const selected=new Set([...document.querySelectorAll('[data-feature]:checked')].flatMap((input)=>input.dataset.feature.split(',')));
     const features=featureData.features.filter((f)=>selected.has(f.properties.feature_type));
     const counts={}; for (const feature of features) counts[feature.properties.feature_type]=(counts[feature.properties.feature_type]||0)+1;
-    $('diagnosticStatus').textContent='Experimental · '+features.length+' features: '+(Object.entries(counts).map(([type,count])=>type+' '+count).join(' · ')||'insufficient qualifying evidence')+($('chartKind').value==='surface' && featureData.properties?.status?.startsWith('No dew') ? ' · Dew point missing: fronts unavailable.' : '')+($('chartKind').value==='upper' && !['300','250','200'].includes($('chartLevel').value) ? ' · Jets: select 300, 250 or 200 hPa.' : '')+($('chartKind').value==='surface' ? ' · '+(featureData.properties?.temporal_status||'Temporal diagnostics not yet published for this chart.') : '');
+    $('diagnosticStatus').textContent='Experimental · '+features.length+' features: '+(Object.entries(counts).map(([type,count])=>type+' '+count).join(' · ')||'insufficient qualifying evidence')+($('chartKind').value==='surface' && featureData.properties?.status?.startsWith('No dew') ? ' · Dew point missing: moisture evidence unavailable; thermal detection remains eligible.' : '')+($('chartKind').value==='upper' && !['300','250','200'].includes($('chartLevel').value) ? ' · Jets: select 300, 250 or 200 hPa.' : '')+($('chartKind').value==='surface' ? ' · '+(featureData.properties?.temporal_status||'Temporal diagnostics not yet published for this chart.') : '');
     for (const feature of features) {
-      const p=feature.properties,area=['airmass_region','advection_region'].includes(p.feature_type),color=p.feature_type==='front' ? frontColors[p.front_type||'unclassified'] : p.feature_type==='airmass_region' ? thermalColors[p.thermal_class] : ['airmass','advection_region'].includes(p.feature_type) ? (p.warming===null?'#737e87':p.warming?'#bc3430':'#176ba8') : featureColors[p.feature_type]||'#555';
+      const before=new Set(diagnostics.getLayers());
+      const p=feature.properties,area=['airmass_region','advection_region'].includes(p.feature_type),color=p.feature_type==='front' ? frontColors[p.front_type||'unclassified'] : p.feature_type==='airmass_region' ? thermalColors[p.thermal_class] : ['airmass','advection_region'].includes(p.feature_type) ? (p.warming===null?'#737e87':p.warming?'#bc3430':'#176ba8') : ({thermal_boundary:'#c17621',moisture_boundary:'#148f70',wind_boundary:'#666e8e'}[p.feature_type]||featureColors[p.feature_type]||'#555');
       const gray=p.gray_factors?'<p><b>Gray-style environmental checklist</b>Not the seasonal Gray index or a genesis probability.</p><table class="gray-factors">'+Object.entries(p.gray_factors).map(([name,f])=>'<tr><th>'+esc(name.replaceAll('_',' '))+'</th><td>'+esc(f.state)+(f.value!=null?' · '+esc(f.value)+' '+esc(f.units||''):'')+'<small>'+esc(f.reason||'')+'</small></td></tr>').join('')+'</table><p>System type is separate from environmental favourability. Unavailable data do not count as satisfied criteria.</p>':'';
       const label=p.feature_type==='tropical'?'Legacy warm-core low — tropical status not established':p.label;
-      const detail='<div class="obs-popup"><b>'+esc(label)+'</b><p>'+utc(featureData.properties.valid_time)+'<br>Experimental diagnostic · '+esc(p.confidence)+' support'+(p.level_hpa ? '<br>'+p.level_hpa+' hPa' : '')+(p.observation_count!=null ? '<br>'+p.observation_count+' surrounding reports · nearest '+p.nearest_observation_km+' km' : '')+(p.previous_time ? '<br>Previous: '+utc(p.previous_time)+' · '+p.comparison_hours+' h comparison' : '')+'</p><p>'+(p.evidence||[]).map(esc).join('<br>')+'</p>'+(p.central_pressure_hpa ? '<p>Central analysed pressure: '+fmt(p.central_pressure_hpa,'hPa')+'</p>' : '')+(p.maximum_wind_kt ? '<p>Maximum analysed wind: '+fmt(p.maximum_wind_kt,'kt')+'</p>' : '')+gray+'</div>';
+      const evidence=[...(p.evidence||[])];
+      if(p.frontogenesis_k_100km_3h!=null)evidence.push('Horizontal frontogenesis: '+fmt(p.frontogenesis_k_100km_3h,'K/100 km/3 h')+' · '+p.frontogenesis_state);
+      if(p.vertical_structure_status)evidence.push('Vertical structure: '+p.vertical_structure_status);
+      if(p.track_id)evidence.push('Track: '+p.track_id+' · '+p.tracking_status);
+      const detail='<div class="obs-popup"><b>'+esc(label)+'</b><p>'+utc(featureData.properties.valid_time)+'<br>Experimental diagnostic · '+esc(p.confidence)+' support'+(p.level_hpa ? '<br>'+p.level_hpa+' hPa' : '')+(p.observation_count!=null ? '<br>'+p.observation_count+' surrounding reports · nearest '+p.nearest_observation_km+' km' : '')+(p.previous_time ? '<br>Previous: '+utc(p.previous_time)+' · '+p.comparison_hours+' h comparison' : '')+'</p><p>'+evidence.map(esc).join('<br>')+'</p>'+(p.central_pressure_hpa ? '<p>Central analysed pressure: '+fmt(p.central_pressure_hpa,'hPa')+'</p>' : '')+(p.maximum_wind_kt ? '<p>Maximum analysed wind: '+fmt(p.maximum_wind_kt,'kt')+'</p>' : '')+gray+'</div>';
       if (feature.geometry.type==='Point') {
         const [lon,lat]=feature.geometry.coordinates,shift=360*Math.round((map.getCenter().lng-lon)/360);
         const symbol={high:'H',low:'L',cyclone:'C?',warm_core:'WC?',tropical:'WC?',extratropical:'ET?'}[p.feature_type];
@@ -138,6 +144,8 @@
           L.marker([lat,lon+shift],{originalLongitude:lon,zIndexOffset:1000,icon:L.divIcon({className:'station-plot',html:'<svg width="28" height="28"><path d="M14 2L5 20L14 15L23 20Z" fill="'+color+'" stroke="white" transform="rotate('+p.wind_to_deg+' 14 14)"/></svg>',iconSize:[28,28],iconAnchor:[14,14]})}).bindPopup(detail).addTo(diagnostics);
         }
       }
+      // All glyphs and world copies select the same original diagnostic snapshot.
+      diagnostics.getLayers().filter(layer=>!before.has(layer)).forEach(layer=>layer.on('click',()=>review.select(feature)));
     }
   }
   function rewrapDiagnostics() {
@@ -151,8 +159,8 @@
   }
   function guide() {
     const field = $('chartField').value, upper = $('chartKind').value === 'upper', level = Number($('chartLevel').value);
-    const title = { pressure: 'Surface mean sea-level pressure', height: level + ' hPa geopotential height', wind: upper ? level + ' hPa observed wind' : 'Observed surface wind', temperature: upper ? level + ' hPa temperature' : 'Surface air temperature' }[field];
-    const interval = field === 'pressure' ? '1 hPa isobars' : field === 'height' ? (level >= 700 ? '30' : level === 500 ? '60' : '120') + ' m height contours' : field === 'temperature' ? '1 °C isotherms' : 'Half barb 5 kt · full barb 10 kt · flag 50 kt';
+    const title = { pressure: 'Surface mean sea-level pressure', 'pressure-tendency':'Same-station pressure change (normalised to 3 h)', height: level + ' hPa geopotential height', wind: upper ? level + ' hPa observed wind' : 'Observed surface wind', temperature: upper ? level + ' hPa temperature' : 'Surface air temperature' }[field];
+    const interval = field === 'pressure-tendency' ? '1 hPa/3 h isallobars · matched stations only' : field === 'pressure' ? '1 hPa isobars' : field === 'height' ? (level >= 700 ? '30' : level === 500 ? '60' : '120') + ' m height contours' : field === 'temperature' ? '1 °C isotherms' : 'Half barb 5 kt · full barb 10 kt · flag 50 kt';
     const colored = ['temperature','pressure'].includes(field);
     const colorbar = colored ? '<div style="height:12px;margin-top:7px;background:linear-gradient(to right,' + activePalette().join(',') + ')"></div><div style="display:flex;justify-content:space-between;gap:5px">' + [0,.25,.5,.75,1].map((fraction) => '<span>' + (colorRange[0]+fraction*(colorRange[1]-colorRange[0])).toFixed(0) + '</span>').join('') + '</div><div>View-adaptive scale · ' + unit() + '</div>' : '';
     $('chartLegend').innerHTML = '<b>' + title + '</b>' + interval + colorbar + (field === 'pressure' ? '<br>Includes labelled QNH-derived estimates' : '');
@@ -173,6 +181,7 @@
     return cache.get(url);
   }
   async function draw() {
+    review.setContext(null);
     $('openSoundings').hidden = $('chartKind').value !== 'upper';
     guide();
     const id = ++requestId, kind = $('chartKind').value, chosen = entries().find((entry) => entry.path === $('chartTime').value);
@@ -185,7 +194,7 @@
     setStatus('Loading ' + utc(chosen.valid_time) + ' observations…');
     try {
       const diagnosticFile=base+(kind==='upper'?level+'-':'')+'features.geojson';
-      const [data, lines, bands, detected] = await Promise.all([json(pointFile), field !== 'wind' && $('showContours').checked ? json(contourFile) : Promise.resolve(null), ['temperature','pressure'].includes(field) ? json(contourFile.replace('.geojson', '-shading.geojson')) : Promise.resolve(null), json(diagnosticFile).catch(()=>null)]);
+      const [data, lines, bands, detected] = await Promise.all([json(pointFile), field !== 'wind' && $('showContours').checked ? json(contourFile).catch(error=>{if(field==='pressure-tendency')return null;throw error;}) : Promise.resolve(null), ['temperature','pressure'].includes(field) ? json(contourFile.replace('.geojson', '-shading.geojson')) : Promise.resolve(null), json(diagnosticFile).catch(()=>null)]);
       if (id !== requestId) return;
       points = data.features || []; activeMetadata = chosen;
       contours.clearLayers();
@@ -203,7 +212,13 @@
           } }).addTo(contours);
         }
       }
-      featureData=detected; renderDiagnostics(); renderStations();
+      featureData=detected;
+      const prior=entries().filter(entry=>Date.parse(entry.valid_time)<Date.parse(chosen.valid_time)).sort((a,b)=>Date.parse(b.valid_time)-Date.parse(a.valid_time))[0];
+      review.setContext({kind,level_hpa:kind==='upper'?Number(level):null,path:chosen.path,valid_time:chosen.valid_time,
+        published_at:chosen.published_at||null,manifest_generated_at:manifest.generated_at,software:manifest.software||null,
+        diagnostics:detected?.properties||{},previous:prior?{valid_time:prior.valid_time,file:kind+'/'+prior.path+'/'+(kind==='upper'?level+'-':'')+'features.geojson'}:null,
+        previous_charts:entries().filter(entry=>Date.parse(entry.valid_time)<Date.parse(chosen.valid_time)).map(entry=>({valid_time:entry.valid_time,file:kind+'/'+entry.path+'/'+(kind==='upper'?level+'-':'')+'features.geojson'}))});
+      renderDiagnostics(); renderStations();
       const usable = points.filter((point) => Number.isFinite(point.properties[fieldName()])).length;
       const age = (Date.now() - Date.parse(chosen.valid_time)) / 3600000;
       const stale = age > (kind === 'surface' ? 6 : 18), degraded = chosen.feed_errors?.length > 0;
@@ -232,7 +247,7 @@
     $('chartLevel').disabled = !upper;
     $('chartLevel').parentElement.style.display = upper ? 'block' : 'none';
     $('chartLevel').parentElement.parentElement.style.gridTemplateColumns = upper ? '1fr 1fr' : '1fr';
-    $('chartField').replaceChildren(...(upper ? [['height', 'Geopotential height'], ['wind', 'Wind'], ['temperature', 'Air temperature']] : [['pressure', 'Mean sea-level pressure'], ['wind', 'Wind'], ['temperature', 'Air temperature']]).map(([value, label]) => {
+    $('chartField').replaceChildren(...(upper ? [['height', 'Geopotential height'], ['wind', 'Wind'], ['temperature', 'Air temperature']] : [['pressure', 'Mean sea-level pressure'], ['pressure-tendency','Pressure change / 3 h'], ['wind', 'Wind'], ['temperature', 'Air temperature']]).map(([value, label]) => {
       const option = document.createElement('option'); option.value = value; option.textContent = label; return option;
     }));
     if (['wind', 'temperature'].includes(previousField)) $('chartField').value = previousField;
@@ -248,6 +263,7 @@
       if (next.version !== 1 || !Array.isArray(next.surface) || !Array.isArray(next.upper)) throw new Error('The chart manifest is invalid.');
       const oldList = entries(), previous = $('chartTime').value, wasLatest = previous === oldList[0]?.path;
       manifest = next; populateTimes(wasLatest ? null : previous);
+      $('chartDownload').disabled=downloadingArchive||!(next.surface.length+next.upper.length);
       await draw();
     } catch (error) { setStatus(error.message, true); }
     finally { loadingManifest = false; }
@@ -282,6 +298,26 @@
   $('chartTime').addEventListener('change', () => { $('chartSlider').value = String(entries().length - 1 - entries().findIndex((entry) => entry.path === $('chartTime').value)); draw(); });
   $('chartSlider').addEventListener('input', () => { const entry = entries()[entries().length - 1 - Number($('chartSlider').value)]; if (entry) { $('chartTime').value = entry.path; draw(); } });
   $('chartRefresh').addEventListener('click', loadManifest);
+  $('chartDownload').addEventListener('click',async()=>{
+    if(downloadingArchive||!manifest)return;
+    downloadingArchive=true;$('chartDownload').disabled=true;
+    const snapshot=JSON.parse(JSON.stringify(manifest));
+    const selection=$('archiveScope').value==='selected'?{kind:$('chartKind').value,path:$('chartTime').value}:null;
+    const status=$('archiveStatus');status.classList.remove('error');
+    try {
+      const archive=await ChartArchive.collect(snapshot,{selection,includeGeometry:$('archiveGeometry').checked,sourceURL:location.href,
+        read:async(path)=>{const response=await fetch(root+'/'+path,{cache:'no-store',signal:AbortSignal.timeout(30000)});if(!response.ok)throw Error('HTTP '+response.status);return response.json();},
+        progress:(done,total)=>{status.textContent='Downloading '+done+' / '+total+' published files…';}});
+      const response=await fetch(root+'/manifest.json',{cache:'no-store'});
+      if(!response.ok||(await response.json()).generated_at!==snapshot.generated_at)throw Error('Charts changed during download. Refresh and retry.');
+      status.textContent='Preparing compressed archive…';
+      const {blob,extension}=await ChartArchive.encode(archive),url=URL.createObjectURL(blob),link=document.createElement('a');
+      link.href=url;link.download='weather-research-'+(selection?selection.kind+'-'+selection.path:'history-'+snapshot.generated_at.replace(/[^0-9]/g,''))+'-export-'+new Date().toISOString().replace(/[^0-9]/g,'')+extension;
+      document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+      status.textContent='Download requested: '+archive.snapshots.length+' snapshots, '+(blob.size/1048576).toFixed(1)+' MB.'+(archive.missing_optional_files.length?' '+archive.missing_optional_files.length+' optional files unavailable; see package notes.':'')+' Check your Downloads folder.';
+    } catch(error) {status.classList.add('error');status.textContent=error.message;}
+    finally {downloadingArchive=false;$('chartDownload').disabled=!(manifest?.surface.length+manifest?.upper.length);}
+  });
   $('chartFullscreen').addEventListener('click', async () => {
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('chartStage').requestFullscreen(); }
     catch { setStatus('Full screen is unavailable in this browser.'); }

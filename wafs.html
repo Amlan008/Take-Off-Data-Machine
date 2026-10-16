@@ -22,6 +22,10 @@
   </style>
   <style>.sounding-dialog select{color:#182832!important;background:#fff!important;color-scheme:light}.sounding-dialog select option{color:#182832!important;background:#fff!important}</style>
 <style>.region-key{font:11px/1.6 'DM Sans',sans-serif;color:#c6d6d9;margin-top:8px}.region-key span{font-weight:700}#regionOpacity{display:block;width:100%;accent-color:#8cbbd5}#regionOpacityValue{float:right}.gray-factors{font-size:11px;border-collapse:collapse;width:100%}.gray-factors th,.gray-factors td{padding:5px;vertical-align:top;border-bottom:1px solid #b7c7cc;text-align:left}.gray-factors small{display:block;color:#4e6269}.obs-popup{max-height:420px;overflow:auto}</style>
+  <style>
+    #chartReview input:not([type=checkbox]),#chartReview textarea{display:block;width:100%;box-sizing:border-box;margin-top:5px;padding:8px;border:1px solid #42606b;background:#172b34;color:#f2f5f5;font:12px 'DM Sans',sans-serif}
+    #chartReview button{padding:7px 8px}#chartReview textarea{resize:vertical}
+  </style>
 </head>
 <body>
 <main class="chart-shell">
@@ -35,16 +39,24 @@
     <div class="chart-controls">
       <details open><summary>CHART CONTROLS</summary>
         <label>CHART TYPE<select id="chartKind"><option value="surface">Surface · every 3 hours</option><option value="upper">Upper air · 00/12 UTC</option></select></label>
-        <div class="chart-pair"><label>PARAMETER<select id="chartField"><option value="pressure">Mean sea-level pressure</option><option value="wind">Wind</option><option value="temperature">Air temperature</option></select></label><label>PRESSURE LEVEL<select id="chartLevel" disabled><option value="925">925 hPa</option><option value="850" selected>850 hPa</option><option value="800">800 hPa</option><option value="700">700 hPa</option><option value="600">600 hPa</option><option value="500">500 hPa</option><option value="400">400 hPa</option><option value="300">300 hPa</option><option value="250">250 hPa</option><option value="200">200 hPa</option><option value="150">150 hPa</option><option value="100">100 hPa</option></select></label></div>
+        <div class="chart-pair"><label>PARAMETER<select id="chartField"><option value="pressure">Mean sea-level pressure</option><option value="pressure-tendency">Pressure change / 3 h</option><option value="wind">Wind</option><option value="temperature">Air temperature</option></select></label><label>PRESSURE LEVEL<select id="chartLevel" disabled><option value="925">925 hPa</option><option value="850" selected>850 hPa</option><option value="800">800 hPa</option><option value="700">700 hPa</option><option value="600">600 hPa</option><option value="500">500 hPa</option><option value="400">400 hPa</option><option value="300">300 hPa</option><option value="250">250 hPa</option><option value="200">200 hPa</option><option value="150">150 hPa</option><option value="100">100 hPa</option></select></label></div>
         <div class="chart-switches"><label><input id="showStations" type="checkbox" checked />Station plots</label><label><input id="showContours" type="checkbox" checked />Contours</label></div>
         <div class="chart-switches"><label><input id="showDiagnostics" type="checkbox" checked />Synoptic diagnostics</label></div>
-        <details id="featureOptions" open style="margin-top:12px"><summary>FEATURE LAYERS · EXPERIMENTAL</summary><div class="feature-switches"><label><input type="checkbox" data-feature="high,low" checked />High / Low</label><label><input type="checkbox" data-feature="trough,ridge" checked />Trough / Ridge</label><label><input type="checkbox" data-feature="front" checked />Front candidates</label><label><input type="checkbox" data-feature="airmass_region" checked />Air-mass regions</label><label><input type="checkbox" data-feature="advection_region" />Advection regions</label><label><input type="checkbox" data-feature="airmass" />Flow arrows</label><label><input type="checkbox" data-feature="jet" checked />Jet streams</label><label><input type="checkbox" data-feature="cyclone,warm_core,tropical,extratropical" checked />Cyclonic lows / factors</label></div>
+        <details id="featureOptions" open style="margin-top:12px"><summary>FEATURE LAYERS · EXPERIMENTAL</summary><div class="feature-switches"><label><input type="checkbox" data-feature="high,low" checked />High / Low</label><label><input type="checkbox" data-feature="trough,ridge" checked />Trough / Ridge</label><label><input type="checkbox" data-feature="front" checked />Front candidates</label><label><input type="checkbox" data-feature="thermal_boundary" />Thermal boundaries</label><label><input type="checkbox" data-feature="moisture_boundary" />Moisture boundaries</label><label><input type="checkbox" data-feature="wind_boundary" />Wind boundaries</label><label><input type="checkbox" data-feature="airmass_region" checked />Air-mass regions</label><label><input type="checkbox" data-feature="advection_region" />Advection regions</label><label><input type="checkbox" data-feature="airmass" />Flow arrows</label><label><input type="checkbox" data-feature="jet" checked />Jet streams</label><label><input type="checkbox" data-feature="cyclone,warm_core,tropical,extratropical" checked />Cyclonic lows / factors</label></div>
           <label for="regionOpacity">Region opacity <output id="regionOpacityValue">24%</output><input id="regionOpacity" type="range" min="0" max="70" value="24" /></label>
           <div class="region-key"><span style="color:#79a6ee">Cold</span> · <span style="color:#57c5ce">Cool</span> · <span style="color:#f0af60">Warm</span> · <span style="color:#ee7f88">Hot</span><br>Surface potential-temperature bins, not named source air masses. Dashed outline: drier; solid: moister. Advection patches: red warming / blue cooling / grey moisture-dominated. Blank: unsupported.</div>
         </details>
         <p id="diagnosticStatus" class="diagnostic-note" aria-live="polite"></p>
         <div class="chart-buttons"><button id="chartRefresh" type="button">Refresh charts</button><button id="chartFullscreen" type="button">Full screen</button></div>
         <div class="chart-buttons"><button id="openSoundings" type="button" hidden>Soundings / Skew-T</button></div>
+        <details id="chartReview" style="margin-top:13px"></details>
+        <details style="margin-top:13px"><summary>RESEARCH DOWNLOAD</summary>
+          <label>ARCHIVE SCOPE<select id="archiveScope"><option value="history">All available history (rolling 48 h)</option><option value="selected">Selected chart only (limited context)</option></select></label>
+          <label><input id="archiveGeometry" type="checkbox" />Include contours / shading (larger file)</label>
+          <div class="chart-buttons"><button id="chartDownload" type="button" disabled>Download research archive</button></div>
+          <p class="chart-status">Observations, soundings where available, diagnostics and metadata. Saves .json.gz (or .json fallback), not a map image. No upstream weather API calls.</p>
+          <p id="archiveStatus" class="chart-status" role="status" aria-live="polite"></p>
+        </details>
       </details>
       <p id="chartStatus" class="chart-status" aria-live="polite">Loading observation charts…</p>
     </div>
@@ -72,6 +84,6 @@
   <p class="sounding-note">Background: brown dashed dry adiabats; blue dashed moist adiabats (liquid-water pseudoadiabatic approximation); green dotted mixing-ratio lines. Wind: half barb 5 kt, full barb 10 kt, flag 50 kt.</p>
   <details><summary>Reported pressure-level values</summary><div class="sounding-values"><table><thead><tr><th>hPa</th><th>T °C</th><th>Td °C</th><th>RH %</th><th>Wind kt</th><th>From °</th></tr></thead><tbody id="soundingTable"></tbody></table></div></details>
 </dialog>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="sounding-plot.js?v=20261013a"></script><script src="wafs.js?v=20261015regions1"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="sounding-plot.js?v=20261013a"></script><script src="chart-archive.js?v=20261016a"></script><script src="chart-review.js?v=20261016a"></script><script src="wafs.js?v=20261016review1"></script>
 </body>
 </html>

@@ -11,9 +11,11 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 import gzip
+from importlib.metadata import version as package_version
 from html import unescape
 import json
 import math
+import os
 from pathlib import Path
 import re
 import time
@@ -42,6 +44,12 @@ KT = 1.94384449
 PRESSURE_INTERVAL = 1
 TEMPERATURE_INTERVAL = 1
 CHART_DELAY_MINUTES = 30
+
+
+def analysis_software():
+    return {'builder_commit':os.environ.get('GITHUB_SHA') or 'local-unversioned',
+            'python':sys.version.split()[0],
+            'packages':{name:package_version(name) for name in ('numpy','scipy','contourpy','netCDF4','eccodes')}}
 
 
 def prepare_surface_pressure(rows):
@@ -410,7 +418,7 @@ def points(rows, target):
                        for row in rows], valid_time=iso(target), data_type='observations')
 
 
-def analysis_grid(rows, field, radius_km):
+def analysis_grid(rows, field, radius_km, diagnostic=False):
     samples = [row for row in rows if row.get(field) is not None]
     if len(samples) < 4:
         return None
@@ -426,20 +434,36 @@ def analysis_grid(rows, field, radius_km):
     supported = km <= radius_km
     # Adaptive Gaussian weighting: broad offshore/sparse analysis, finer near
     # dense reports. A cosine taper avoids abrupt nearest-neighbour cutoffs.
-    scale = np.clip(km[:, min(7, len(samples) - 1)] * .6, 120, radius_km * .55)
+    scale = np.clip(km[:, min(7, len(samples) - 1)] * .6, 90 if diagnostic else 120, radius_km * .55)
     weights = np.exp(-.5 * (km / scale[:, None]) ** 2) * np.where(supported, .5 * (1 + np.cos(np.pi * np.minimum(km / radius_km, 1))), 0)
     quality = np.array([.5 / (1 + max(0, row.get('elevation_m') or 0) / 1500)
                         if row.get('pressure_method') == 'estimated_qnh' and field == 'mslp_hpa' else 1.
                         for row in samples])
     weights *= quality[indices]
+    if diagnostic:
+        # Reduce repeated/clustered reports within ~0.25 degree cells. This is
+        # spatial redundancy weighting, not a claim of independent error variance.
+        cells=[(round(row['latitude']*4),round(row['longitude']*4)) for row in samples]
+        from collections import Counter
+        population=Counter(cells)
+        weights *= np.array([1/math.sqrt(population[cell]) for cell in cells])[indices]
+        # Conservative local gross-error downweighting, not rejection of extremes.
+        if len(samples)>=8:
+            _,neighbours=cKDTree(locations).query(locations,k=min(12,len(samples)))
+            observed=np.array([row[field] for row in samples]);near=observed[neighbours[:,1:]]
+            median=np.median(near,axis=1);mad=np.median(abs(near-median[:,None]),axis=1)*1.4826
+            floor={'mslp_hpa':12,'temperature_c':15,'theta_k':15,'dewpoint_c':20}.get(field,50)
+            suspect=abs(observed-median)>np.maximum(floor,6*mad)
+            weights *= np.where(suspect,.25,1.)[indices]
     valid = (supported.sum(axis=1) >= 3) & (weights.sum(axis=1) > 1e-6)
     values = np.array([row[field] for row in samples])
     grid = (np.sum(weights * values[indices], axis=1) / np.maximum(weights.sum(axis=1), 1e-12)).reshape(xx.shape)
     valid = valid.reshape(xx.shape)
     # Normalized convolution prevents missing cells contaminating valid fields;
     # longitude wraps, latitude does not. Preserve the original support mask.
-    denominator = gaussian_filter(valid.astype(float), 1.4, mode=('nearest', 'wrap'))
-    grid = gaussian_filter(np.where(valid, grid, 0), 1.4, mode=('nearest', 'wrap')) / np.maximum(denominator, 1e-12)
+    sigma=.8 if diagnostic else 1.4
+    denominator = gaussian_filter(valid.astype(float), sigma, mode=('nearest', 'wrap'))
+    grid = gaussian_filter(np.where(valid, grid, 0), sigma, mode=('nearest', 'wrap')) / np.maximum(denominator, 1e-12)
     grid = np.ma.array(np.column_stack((grid, grid[:, 0])), mask=~np.column_stack((valid, valid[:, 0])))
     return np.append(x, 180), y, grid
 
@@ -516,9 +540,9 @@ def diagnostic_grids(rows, kind, primary=None):
     eligible = rows if kind == 'upper' else [row for row in rows if (row.get('elevation_m') or 0) <= 800]
     radius = 2000 if kind == 'upper' else 1500
     field = 'height_m' if kind == 'upper' else 'mslp_hpa'
-    result = {field: primary if kind == 'upper' else analysis_grid(eligible, field, 2000)}
+    result = {field: analysis_grid(eligible,field,2000,diagnostic=True)}
     for name in ('u_ms', 'v_ms', 'temperature_c', 'dewpoint_c') + (('theta_k', 'theta_e_k', 'mixing_ratio_gkg') if kind == 'surface' else ()):
-        result[name] = analysis_grid(eligible, name, radius)
+        result[name] = analysis_grid(eligible, name, radius, diagnostic=True)
     return result
 
 
@@ -544,7 +568,7 @@ def previous_surface(output, target):
     path=output/'manifest.json'
     if not path.exists(): return None, [], None, None
     entries=json.loads(path.read_text()).get('surface', [])
-    eligible=[entry for entry in entries if 6*3600 <= (target-datetime.fromisoformat(entry['valid_time'])).total_seconds() <= 18*3600]
+    eligible=[entry for entry in entries if 3*3600 <= (target-datetime.fromisoformat(entry['valid_time'])).total_seconds() <= 18*3600]
     if not eligible: return None, [], None, None
     entry=max(eligible,key=lambda item:item['valid_time']); folder=output/'surface'/entry['path']
     try:
@@ -585,9 +609,14 @@ def build_chart(output, kind, target, rows, errors, upper_context=None, diagnost
                                        upper_context if upper_context is not None else sounding_context(output,target))
             diagnostic['features'].extend(air_mass_regions(rows,grids,iso(target)))
             diagnostic['properties']['feature_count']=len(diagnostic['features'])
-            diagnostic['properties']['method']='Experimental observation-supported diagnostics v3; thermodynamic regions and Gray-style factor checklist'
+            diagnostic['properties']['method']='Experimental diagnostics v4; independent boundaries, spherical derivatives, horizontal frontogenesis and 3-hour tracking'
+            diagnostic['properties']['builder_commit']=os.environ.get('GITHUB_SHA') or 'local-unversioned'
+            diagnostic['properties']['analysis_policy']={'grid_degrees':.5,'minimum_weight_scale_km':90,'smoothing_sigma_cells':.8,'display_analysis_separate':True,'confidence':'qualitative, not calibrated probabilities'}
             diagnostic['properties']['valid_time'] = iso(target)
             write_json(folder / 'features.geojson', diagnostic)
+            # Same-station tendencies are calculated during temporal enrichment.
+            write_json(folder / 'observations.geojson', points(rows,target))
+            write_json(folder / 'pressure-tendency.geojson',contours(rows,'pressure_change_hpa_3h',1,1000))
     else:
         # Keep all reported pressure levels for future sounding/Skew-T tools.
         # The map uses a separate, explicitly labelled pressure-level sample.
@@ -700,7 +729,7 @@ def main():
                 updated.append(result)
                 print(f'Reprocessed {kind} {entry["path"]}: {len(rows)} reports', flush=True)
             manifest[kind] = updated
-        manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=3)
+        manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=4,software=analysis_software())
         write_json(path, manifest)
         return
     try:
@@ -731,7 +760,7 @@ def main():
     surface_rows, upper_rows = deduplicate(surface_rows, surface), deduplicate(upper_rows, upper)
     path = args.output / 'manifest.json'
     previous = json.loads(path.read_text()) if path.exists() else {}
-    manifest = {'version': 1, 'analysis_version': 2, 'diagnostics_version': 3, 'generated_at': iso(now), 'pressure_policy': policy,
+    manifest = {'version': 1, 'analysis_version': 2, 'diagnostics_version': 4, 'builder_commit':os.environ.get('GITHUB_SHA') or 'local-unversioned','generated_at': iso(now), 'pressure_policy': policy,
                 'levels_hpa': list(LEVELS), 'surface': previous.get('surface', []), 'upper': previous.get('upper', [])}
     succeeded = []
     for kind, target, rows, errors, minimum in [('surface', surface, surface_rows, surface_errors, 100), ('upper', upper, upper_rows, upper_errors, 30)]:
@@ -750,6 +779,7 @@ def main():
         'upper': {'target_time': iso(upper), 'updated': 'upper' in succeeded, 'feed_errors': upper_errors},
     }
     # Manifest is replaced last, so the browser never discovers unfinished data.
+    manifest['software']=analysis_software()
     write_json(args.output / 'manifest.tmp.json', manifest)
     (args.output / 'manifest.tmp.json').replace(path)
     import shutil

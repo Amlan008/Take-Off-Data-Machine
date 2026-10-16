@@ -1,5 +1,10 @@
 # Surface and upper-air observation charts
 
+For the newer local research/test revision, see
+[diagnostics v4](OBSERVATION_REFINEMENT_V4.md). Its boundary, temporal and analysis
+rules supersede the older v3 implementation notes below after deployment and
+chart regeneration; the literature review is in `SYNOPTIC_FEATURE_REFINEMENT_STUDY.md`.
+
 The existing `wafs.html` URL now opens **Observation Charts**. The associated
 `.github/workflows/gfs-hazards.yml` workflow now runs the observation builder.
 

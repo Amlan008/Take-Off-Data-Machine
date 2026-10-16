@@ -1,0 +1,10 @@
+{
+  "review_status": "pending_review",
+  "reviewer": null,
+  "valid_time": null,
+  "coverage_bbox": null,
+  "reviewed_feature_types": ["front", "trough", "ridge", "high", "low"],
+  "matching_tolerance_km": 100,
+  "features": [],
+  "notes": "Template only, not expert labels. Fill the UTC time, review area, geometries and reviewer before marking reviewed. An empty reviewed feature list explicitly asserts a negative case within that scope."
+}

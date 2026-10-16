@@ -8,6 +8,7 @@ from datetime import datetime
 import numpy as np
 from scipy.ndimage import gaussian_filter, maximum_filter, minimum_filter, binary_erosion
 from scipy.spatial import cKDTree
+from diagnostic_math import gradients, vector_diagnostics
 
 EARTH = 6371.
 
@@ -54,12 +55,6 @@ def support(rows, field, x, y, upper=False):
     valid = (count >= 6) & (km[:,0] <= (600 if upper else 250)) & (maximum_gap <= np.radians(190))
     valid = valid.reshape(shape) & (abs(yy)<75)
     return valid, count.reshape(shape), km[:,0].reshape(shape)
-
-
-def gradients(z, x, y):
-    dy = np.radians(y[1]-y[0])*EARTH*1000
-    dx = np.radians(x[1]-x[0])*EARTH*1000*np.maximum(np.cos(np.radians(y)),.2)[:,None]
-    return (np.roll(z,-1,axis=1)-np.roll(z,1,axis=1))/(2*dx), np.gradient(z,dy,axis=0)
 
 
 def background(z, valid, sigma=8):
@@ -110,8 +105,9 @@ def axis_mask(z, valid, x, y, ridge, flow=None):
     gx, gy = gradients(z,x,y)
     gxx,gxy=gradients(gx,x,y); gyx,gyy=gradients(gy,x,y)
     hessian=np.empty(z.shape+(2,2))
-    hessian[...,0,0],hessian[...,1,1]=gxx,gyy
-    hessian[...,0,1]=hessian[...,1,0]=(gxy+gyx)/2
+    metric=np.tan(np.radians(y))[:,None]/(EARTH*1000)
+    hessian[...,0,0],hessian[...,1,1]=gxx-gy*metric,gyy
+    hessian[...,0,1]=hessian[...,1,0]=(gxy+gyx+gx*metric)/2
     eigenvalues,vectors=np.linalg.eigh(hessian)
     index=0 if ridge else 1
     curvature=eigenvalues[...,index]
@@ -126,6 +122,13 @@ def axis_mask(z, valid, x, y, ridge, flow=None):
     if flow is not None:
         u,v=flow
         result &= abs(normal[...,0]*u+normal[...,1]*v) <= .6*np.maximum(np.hypot(u,v),1e-6)
+        from scipy.ndimage import map_coordinates
+        aa,bb=np.indices(z.shape)
+        di=normal[...,1]*100/(111.195*(y[1]-y[0]))
+        dj=normal[...,0]*100/(111.195*(x[1]-x[0])*np.maximum(.1,np.cos(np.radians(y)))[:,None])
+        side0=map_coordinates(z,[aa-di,bb-dj],order=1,mode='nearest')
+        side1=map_coordinates(z,[aa+di,bb+dj],order=1,mode='nearest')
+        result &= (z>(side0+side1)/2+.1) if ridge else (z<(side0+side1)/2-.1)
     return result
 
 
@@ -176,8 +179,9 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
     if u is not None and v is not None:
         wind_valid,wind_count,wind_nearest=support(rows,'u_ms',x,y,upper)
         wind_valid=binary_erosion(wind_valid & umask & vmask,iterations=2)
-        ux,uy=gradients(u,x,y); vx,vy=gradients(v,x,y)
-        shear=(vx-uy)*np.sign(y)[:,None]; convergence=-(ux+vy)
+        flow=vector_diagnostics(u,v,x,y)
+        ux,uy,vx,vy=(flow[key] for key in ('ux','uy','vx','vy'))
+        shear=flow['vorticity']*np.sign(y)[:,None]; convergence=-flow['divergence']
     if valid.any():
         for ridge in (False,True):
             mask=axis_mask(z,valid,x,y,ridge) & ((residual> (15 if upper else .8)) if ridge else (residual<(-15 if upper else -.8)))
@@ -203,6 +207,11 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
                 if len(accepted)>=30: break
 
     fronts=[]
+    if not upper:
+        from boundary_diagnostics import detect_boundaries
+        boundaries=detect_boundaries(rows,grids,x,y,smooth)
+        features.extend(boundaries)
+        fronts=[f for f in boundaries if f['properties']['feature_type']=='front']
     if u is not None and v is not None:
         if upper and level in (300,250,200):
             speed=np.hypot(u,v)*1.94384449
@@ -211,38 +220,6 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
             add_lines(jet,'jet','Jet-stream candidate', ['Analysed wind ≥60 kt','Transverse wind-speed maximum; surrounding soundings'],600,speed)
             count,nearest=old_count,old_nearest
         elif not upper:
-            t,tmask=grid('temperature_c'); td,tdmask=grid('dewpoint_c')
-            theta,thetamask=grid('theta_k'); theta_e,thetaemask=grid('theta_e_k')
-            if t is not None and td is not None and theta is not None and theta_e is not None:
-                tdvalid,_,_=support(rows,'dewpoint_c',x,y)
-                thvalid,_,_=support(rows,'theta_k',x,y); thevalid,_,_=support(rows,'theta_e_k',x,y)
-                tx,ty=gradients(theta,x,y); dx,dy=gradients(theta_e,x,y)
-                tg,dg=np.hypot(tx,ty),np.hypot(dx,dy)
-                alignment=(tx*dx+ty*dy)/np.maximum(tg*dg,1e-12)
-                # Cross-boundary wind shift sampled ~100 km on both sides.
-                nx,ny=tx/np.maximum(tg,1e-12),ty/np.maximum(tg,1e-12)
-                from scipy.ndimage import map_coordinates
-                aa,bb=np.indices(t.shape); di=ny*100/(111.195*(y[1]-y[0]));dj=nx*100/(111.195*(x[1]-x[0])*np.maximum(.2,np.cos(np.radians(y)))[:,None])
-                us=[];vs=[];side_support=np.ones_like(valid)
-                for sign in (-1,1):
-                    coords=np.array([aa+sign*di,bb+sign*dj])
-                    us.append(map_coordinates(u,coords,order=1,mode='nearest'));vs.append(map_coordinates(v,coords,order=1,mode='nearest'))
-                    side_support &= map_coordinates(wind_valid.astype(float),coords,order=0,mode='nearest')>.5
-                angle=np.arccos(np.clip((us[0]*us[1]+vs[0]*vs[1])/np.maximum(np.hypot(us[0],vs[0])*np.hypot(us[1],vs[1]),1e-9),-1,1))
-                shift=(angle>=math.radians(30))&(np.hypot(us[0],vs[0])>=2)&(np.hypot(us[1],vs[1])>=2)
-                mask=valid & wind_valid & side_support & binary_erosion(tdvalid&thvalid&thevalid&tmask&tdmask&thetamask&thetaemask,iterations=2) & (tg>=1.5e-5) & (dg>=3e-5) & (alignment>=.5) & shift & ((shear>=.8e-5)|(convergence>=.5e-5))
-                before=len(features)
-                add_lines(mask,'front','Potential frontal boundary', ['Potential-temperature gradient ≥1.5 K/100 km and theta-e gradient ≥3 K/100 km','Aligned thermal/moisture boundary plus ≥30° cross-boundary wind shift','Cyclonic shear/convergence; deep pressure trough is not required','Terrain/coast/heating artifacts remain possible; temporal classification requires further agreement'],250)
-                fronts=features[before:]
-                # Suppress only genuinely overlapping ridge segments on this
-                # supported frontal ribbon; don't exclude nearby real ridges.
-                for feature in list(features):
-                    if feature['properties']['feature_type']!='ridge':continue
-                    line=feature['geometry']['coordinates']; overlap=0
-                    for lon,lat in line:
-                        a=int(np.argmin(abs(y-lat)));b=int(np.argmin(abs(x-lon)))
-                        overlap+=bool(mask[a,b])
-                    if overlap>len(line)*.3:features.remove(feature)
             # Diagnose circulation around each low from actual reports, not
             # interpolation alone. Do not infer cyclone type from latitude.
             for a,b,low in centers:
@@ -267,7 +244,7 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
                 if near_front: evidence.append('Nearby independently detected frontal boundary')
                 evidence+=assessment.pop('evidence')
                 features.append({'type':'Feature','geometry':low['geometry'],'properties':properties(type_,label_,a,b,evidence,central_pressure_hpa=low['properties']['central_pressure_hpa'],**assessment)})
-    return {'type':'FeatureCollection','features':features,'properties':{'method':'Experimental observation-supported diagnostics v3',
-             'status':'Dew point available' if any(r.get('dewpoint_c') is not None for r in rows) else 'No dew point: front detection unavailable',
+    return {'type':'FeatureCollection','features':features,'properties':{'method':'Experimental observation-supported diagnostics v4',
+             'status':'Dew point available' if any(r.get('dewpoint_c') is not None for r in rows) else 'No dew point: moisture diagnostics unavailable; thermal boundaries remain eligible',
              'front_classification':'Candidate boundaries only; cold/warm/occluded type not established',
              'jet_threshold_kt':60,'feature_count':len(features)}}
