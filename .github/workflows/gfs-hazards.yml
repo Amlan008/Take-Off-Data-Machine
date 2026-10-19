@@ -7,6 +7,8 @@ on:
       - '.github/workflows/gfs-hazards.yml'
       - 'requirements-observation-charts.txt'
       - 'scripts/build_observation_charts.py'
+      - 'scripts/wyoming_upper_air.py'
+      - 'scripts/test_wyoming_upper_air.py'
       - 'scripts/synoptic_features.py'
       - 'scripts/temporal_diagnostics.py'
       - 'scripts/airmass_regions.py'
@@ -61,6 +63,7 @@ jobs:
       - name: Check decoders and synoptic diagnostic rules
         run: |
           python scripts/test_observation_charts.py
+          python scripts/test_wyoming_upper_air.py
           python scripts/test_synoptic_features.py
           python scripts/test_temporal_diagnostics.py
           python scripts/test_region_diagnostics.py
@@ -69,6 +72,7 @@ jobs:
           node scripts/test_chart_archive.mjs
           node scripts/test_chart_review.mjs
           node scripts/test_diagnostic_comparison.mjs
+          node scripts/test_sounding_plot.mjs
       - name: Build surface, upper-air and synoptic diagnostics
         shell: bash
         env:

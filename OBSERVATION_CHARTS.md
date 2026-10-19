@@ -61,7 +61,13 @@ regression tests verify rules, not forecast skill against labelled analyses.
 NOAA MADIS public hourly METAR and maritime NetCDF files provide land and marine
 observations. DWD's international SYNOP BUFR bulletins supplement land coverage.
 NOAA MADIS public radiosonde NetCDF files provide mandatory and significant
-pressure-level sounding observations. Requested map levels are 925, 850, 800,
+pressure-level sounding observations (primary). Wyoming cycle-specific CSV
+profiles now supplement missing/incomplete stations with source-labelled gaps;
+see `WYOMING_UPPER_AIR.md` for merge rules, thinning and request budgets.
+Every three-hourly run rechecks both the latest and preceding 00/12 UTC cycle,
+retaining already captured same-cycle profiles if fresh downloads are partial.
+MADIS receipt-hour files through +12 hours are checked for delayed messages.
+Requested map levels are 925, 850, 800,
 700, 600, 500, 400, 300, 250, 200, 150 and 100 hPa. Full reported pressure profiles
 are saved in `soundings.json` for future Skew-T tools. Dew point is T minus the
 reported dew-point depression (`tdMan`/`tdSigT`/`tdTrop`); RH is derived over liquid

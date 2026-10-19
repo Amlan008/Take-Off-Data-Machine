@@ -36,6 +36,7 @@ if str(ROOT / 'scripts') not in sys.path:
 from synoptic_features import diagnose, wind_components
 from temporal_diagnostics import enrich_temporal
 from airmass_regions import prepare_thermodynamics, air_mass_regions
+from wyoming_upper_air import WyomingClient, merge_profiles, stamp as upper_stamp
 UTC = timezone.utc
 LEVELS = (925, 850, 800, 700, 600, 500, 400, 300, 250, 200, 150, 100)
 MADIS = 'https://madis-data.ncep.noaa.gov/madisPublic1/data/point/'
@@ -77,13 +78,13 @@ def prepare_surface_pressure(rows):
     return rows
 
 
-def fetch(url):
-    for attempt in range(3):
+def fetch(url, attempts=3, timeout=50):
+    for attempt in range(attempts):
         try:
-            with urlopen(Request(url, headers={'User-Agent': 'WeatherMachine-ObservationCharts/1.0'}), timeout=50) as response:
+            with urlopen(Request(url, headers={'User-Agent': 'WeatherMachine-ObservationCharts/1.0'}), timeout=timeout) as response:
                 return response.read()
         except Exception:
-            if attempt == 2:
+            if attempt == attempts-1:
                 raise
             time.sleep(attempt + 1)
 
@@ -215,6 +216,7 @@ def decode_upper_nc(payload, target, locations=None, full_profile=False):
             'tpTrop', 'tdTrop', 'wdTrop', 'wsTrop'} or key.endswith('DD')}
         for i in range(len(dataset.dimensions['recNum'])):
             timestamp = nc_value(data, 'synTime', i, 0, 4e9)
+            identifier = nc_value(data, 'wmoStaNum', i, 1, 99999)
             lat = nc_value(data, 'staLat', i, -90, 90)
             lon = nc_value(data, 'staLon', i, -180, 180)
             location_source = 'Sounding report'
@@ -265,6 +267,7 @@ def decode_upper_nc(payload, target, locations=None, full_profile=False):
                     'latitude': lat, 'longitude': lon, 'observed_at': iso(observed),
                     'launch_at': iso(datetime.fromtimestamp(release, UTC)) if release is not None else None,
                     'source': 'NOAA MADIS radiosonde', 'level_hpa': pressure,
+                    'wmo_station': str(int(identifier)).zfill(5) if identifier is not None else None,
                     'level_type': group, 'level_method': 'observed',
                     'location_source': location_source,
                     'height_m': value(height_key, -500, 35000),
@@ -370,14 +373,19 @@ def synop_urls(target):
 def retrieve(target, kind, decoder, errors, now=None):
     rows = []
     current_hour = (now or datetime.now(UTC)).replace(minute=0, second=0, microsecond=0)
-    for offset in (-1, 0, 1):
+    # Late RAOB messages may be placed in a later receipt-hour file rather
+    # than revising the nominal-hour file. Recheck through +12 h, decoding
+    # only this nominal cycle. Bound failures; next scheduled run retries.
+    offsets = range(-1, max(1, min(12, int((current_hour-target).total_seconds()//3600)))+1) if kind == 'raob' else (-1,0,1)
+    for offset in offsets:
         hour = target + timedelta(hours=offset)
         if hour > current_hour:
             errors.append(f'{kind} {hour:%d/%H}: later hourly file not yet due at build time; early-cycle coverage is partial')
             continue
         url = MADIS + f'{kind}/netcdf/{hour:%Y%m%d_%H}00.gz'
         try:
-            rows.extend(decoder(fetch(url), target))
+            payload = fetch(url, attempts=1, timeout=15) if kind == 'raob' else fetch(url)
+            rows.extend(decoder(payload, target))
         except Exception as exc:
             errors.append(f'{kind} {hour:%d/%H}: {exc}')
     return rows
@@ -690,12 +698,16 @@ def pressure_samples(rows):
     for group in groups.values():
         for level in LEVELS:
             exact = next((row for row in group if row['level_hpa'] == level), None)
-            if exact is not None:
-                output.append(dict(exact))
-                continue
-            sample = dict(group[0], level_hpa=level, level_method='interpolated_log_pressure', level_type='requested')
-            any_value = False
+            sample = dict(exact) if exact is not None else dict(group[0], level_hpa=level,
+                          level_method='interpolated_log_pressure', level_type='requested')
+            sample['field_sources'] = dict(sample.get('field_sources', {}))
+            interpolated = []
+            any_value = exact is not None
             for field in ('temperature_c', 'dewpoint_c', 'height_m', 'u_ms', 'v_ms'):
+                if exact is not None and exact.get(field) is not None:
+                    continue
+                if field in ('u_ms','v_ms') and exact is not None and any(exact.get(f) is not None for f in ('wind_kt','wind_from_deg')):
+                    continue  # retain partial observed winds; don't invent a paired vector
                 usable = sorted((row for row in group if row.get(field) is not None), key=lambda row: row['level_hpa'])
                 below = [row for row in usable if row['level_hpa'] < level]
                 above = [row for row in usable if row['level_hpa'] > level]
@@ -707,14 +719,53 @@ def pressure_samples(rows):
                     continue
                 fraction = math.log(level / lo['level_hpa']) / math.log(hi['level_hpa'] / lo['level_hpa'])
                 sample[field] = round(lo[field] + fraction * (hi[field] - lo[field]), 3)
+                sample['field_sources'][field] = ' / '.join(sorted({str(r.get('field_sources', {}).get(field, r['source'])) for r in (lo,hi)}))
+                interpolated.append(field)
                 any_value = True
             u, v = sample['u_ms'], sample['v_ms']
-            sample['wind_kt'] = number(math.hypot(u, v) * KT) if u is not None and v is not None else None
-            sample['wind_from_deg'] = (math.degrees(math.atan2(-u, -v)) % 360) if u is not None and v is not None else None
+            if exact is None or not any(exact.get(f) is not None for f in ('wind_kt','wind_from_deg')):
+                sample['wind_kt'] = number(math.hypot(u, v) * KT) if u is not None and v is not None else None
+                sample['wind_from_deg'] = (math.degrees(math.atan2(-u, -v)) % 360) if u is not None and v is not None else None
             sample['relative_humidity_pct'] = relative_humidity(sample['temperature_c'], sample['dewpoint_c'])
+            if interpolated:
+                sample['interpolated_fields'] = interpolated
+                if exact is not None:
+                    sample['level_method'] = 'observed_with_interpolated_fields'
             if any_value:
                 output.append(sample)
     return output
+
+
+def refresh_upper(output, target, locations, client, ledger, now, max_profiles=80):
+    """Re-query the nominal cycle, retaining successful same-cycle observations.
+
+    Late data only replace/extend their own 00/12 chart, never a newer cycle.
+    Retained files are the cache; the ledger contains only bounded retry metadata.
+    """
+    errors = []
+    fresh = deduplicate(retrieve(target, 'raob', lambda data, cycle:
+        decode_upper_nc(data, cycle, locations, full_profile=True), errors, now=now), target)
+    stored = output/'upper'/target.strftime('%Y%m%d%H')/'soundings.json'
+    retained = []
+    if stored.exists():
+        try:
+            data = json.loads(stored.read_text())
+            if data.get('valid_time') == upper_stamp(target):
+                retained = [r for p in data.get('profiles', []) for r in p['levels']]
+        except (ValueError, KeyError, TypeError) as exc:
+            errors.append(f'Retained upper-air cache unreadable: {exc}')
+    # Keep primary source precedence even when a previously captured profile
+    # contains mixed MADIS/Wyoming rows. Never run generic spatial dedup on the
+    # combined feed: its time/coordinate policy is for surface platforms.
+    madis = [r for r in retained if r.get('source') == 'NOAA MADIS radiosonde']
+    wyoming = [r for r in retained if r.get('source') != 'NOAA MADIS radiosonde']
+    rows = merge_profiles(fresh, madis, target)
+    rows = merge_profiles(rows, wyoming, target)
+    cycle_ledger = ledger.setdefault(upper_stamp(target), {})
+    rows, stats = client.fill(target, rows, cycle_ledger, errors, now, max_profiles=max_profiles)
+    stats.update(checked_at=iso(now), fresh_madis_rows=len(fresh), retained_input_rows=len(retained),
+                 policy='MADIS primary; same-cycle retention; Wyoming gap fill; no launch averaging')
+    return rows, errors, stats
 
 
 def main():
@@ -778,8 +829,22 @@ def main():
         locations = station_locations(fetch('https://www.ncei.noaa.gov/pub/data/igra/igra2-station-list.txt'))
     except Exception as exc:
         upper_errors.append(f'Radiosonde station inventory: {exc}')
-    upper_rows = retrieve(upper, 'raob', lambda data, target: decode_upper_nc(data, target, locations, full_profile=True), upper_errors)
-    surface_rows, upper_rows = deduplicate(surface_rows, surface), deduplicate(upper_rows, upper)
+    # Every three-hourly execution checks both the latest nominal sounding
+    # cycle and the preceding 12-hour cycle (captures late arrivals at rollover).
+    ledger_path = args.output/'upper-refresh-state.json'
+    try:
+        ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
+        if not isinstance(ledger, dict):
+            ledger = {}
+    except (ValueError, OSError):
+        ledger = {}
+    client = WyomingClient()
+    upper_rows, refresh_errors, upper_refresh = refresh_upper(args.output, upper, locations, client, ledger, now)
+    upper_errors.extend(refresh_errors)
+    older_upper = upper - timedelta(hours=12)
+    older_rows, older_errors, older_refresh = refresh_upper(args.output, older_upper, locations, client, ledger, now, max_profiles=35)
+    ledger = {key:value for key,value in ledger.items() if datetime.fromisoformat(key) >= now-timedelta(hours=48)}
+    surface_rows = deduplicate(surface_rows, surface)
     path = args.output / 'manifest.json'
     previous = json.loads(path.read_text()) if path.exists() else {}
     manifest = {'version': 1, 'analysis_version': 2, 'diagnostics_version': 4, 'builder_commit':os.environ.get('GITHUB_SHA') or 'local-unversioned','generated_at': iso(now), 'pressure_policy': policy,
@@ -790,18 +855,30 @@ def main():
             print(f'{kind}: insufficient observations ({len(rows)}); retaining previous charts. Errors: {errors}')
             continue
         entry = build_chart(args.output, kind, target, rows, errors, upper_context=upper_rows if kind == 'surface' else None)
+        if kind == 'upper':
+            entry['refresh'] = upper_refresh
+            write_json(args.output/'upper'/entry['path']/'metadata.json', entry)
         retained = [item for item in manifest[kind] if item['path'] != entry['path'] and datetime.fromisoformat(item['valid_time']) >= now - timedelta(hours=48)]
         manifest[kind] = sorted(retained + [entry], key=lambda item: item['valid_time'], reverse=True)
         succeeded.append(kind)
         print(f'{kind}: {entry["valid_time"]}, {len(rows)} observations, sources={entry["sources"]}, feed errors={len(errors)}')
+    if len(older_rows) >= 30 and older_upper >= now-timedelta(hours=48):
+        entry = build_chart(args.output, 'upper', older_upper, older_rows, older_errors)
+        entry['refresh'] = older_refresh
+        write_json(args.output/'upper'/entry['path']/'metadata.json', entry)
+        manifest['upper'] = sorted([item for item in manifest['upper'] if item['path'] != entry['path']] + [entry],
+                                   key=lambda item:item['valid_time'], reverse=True)
+        print(f'Late upper-air refresh: {entry["valid_time"]}, {len(older_rows)} profile levels', flush=True)
     if not succeeded:
         raise RuntimeError('No current chart could be generated. Previously published charts were retained.')
     manifest['last_build'] = {
         'surface': {'target_time': iso(surface), 'updated': 'surface' in succeeded, 'feed_errors': surface_errors},
         'upper': {'target_time': iso(upper), 'updated': 'upper' in succeeded, 'feed_errors': upper_errors},
+        'upper_refreshes': [upper_refresh, older_refresh],
     }
     # Manifest is replaced last, so the browser never discovers unfinished data.
     manifest['software']=analysis_software()
+    write_json(ledger_path, ledger)
     write_json(args.output / 'manifest.tmp.json', manifest)
     (args.output / 'manifest.tmp.json').replace(path)
     import shutil

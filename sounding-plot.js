@@ -65,11 +65,13 @@
   function draw() {
     const profile=profiles[Number(select.value)];if(!profile)return;
     document.getElementById('soundingTitle').textContent='Skew-T · '+profile.station;
-    document.getElementById('soundingMeta').textContent=profile.observed_at.replace('T',' ').replace('Z',' UTC')+' · '+profile.latitude.toFixed(2)+'°, '+profile.longitude.toFixed(2)+'° · '+profile.levels.length+' reported pressure levels';
+    const sources=[...new Set(profile.levels.flatMap(r=>[r.source,...(r.supplement_sources||[])])).values()].filter(Boolean);
+    document.getElementById('soundingMeta').textContent=profile.observed_at.replace('T',' ').replace('Z',' UTC')+' · '+profile.latitude.toFixed(2)+'°, '+profile.longitude.toFixed(2)+'° · '+profile.levels.length+' reported pressure levels · '+sources.join(' / ');
     document.getElementById('soundingSvg').innerHTML=render(profile);
     document.getElementById('soundingTable').innerHTML=profile.levels.slice().sort((a,b)=>b.level_hpa-a.level_hpa).map(r=>'<tr>'+[r.level_hpa,r.temperature_c,r.dewpoint_c,r.relative_humidity_pct,r.wind_kt,r.wind_from_deg].map(v=>'<td>'+(finite(v)?v.toFixed(1):'—')+'</td>').join('')+'</tr>').join('');
     const usable=profile.levels.filter(r=>finite(r.temperature_c)&&finite(r.dewpoint_c));
     document.getElementById('soundingWarning').textContent=usable.length<3?'Insufficient paired temperature/dew-point levels; no complete profile can be shown.':'Reported levels only; missing values and gaps >200 hPa break the curves. No parcel ascent, CAPE or CIN calculation is shown.';
+    if(profile.levels.some(r=>r.sampling_policy)) document.getElementById('soundingWarning').textContent+=' Wyoming high-resolution data are thinned to reported samples per 5 hPa bin plus exact chart levels; narrow features may be lost.';
   }
   select.addEventListener('change',draw);
   document.getElementById('soundingClose').addEventListener('click',()=>dialog.close());

@@ -76,9 +76,14 @@
     else result += '<br>' + (p.pressure_method === 'estimated_qnh' ? 'Estimated MSLP from QNH' : 'Reported MSLP') + ': ' + fmt(p.mslp_hpa, 'hPa') + '<br>Airport QNH: ' + fmt(p.qnh_hpa, 'hPa') + '<br>Station elevation: ' + fmt(p.elevation_m, 'm') + (p.pressure_method === 'estimated_qnh' ? '<br><small>ISA inversion + temperature/elevation hypsometric reduction; approximate, lower analysis weight. High-terrain estimates are less reliable.</small>' : '');
     result += '<br>Relative humidity: ' + fmt(p.relative_humidity_pct, '%') + (p.relative_humidity_pct != null ? ' (derived)' : '');
     if (p.level_method === 'interpolated_log_pressure') result += '<br><b>Interpolated between observed sounding levels</b>';
+    if (p.level_method === 'observed_with_interpolated_fields') result += '<br><b>Observed level with interpolated missing fields: ' + esc((p.interpolated_fields || []).join(', ')) + '</b>';
     result += '</p><p>' + coords[1].toFixed(2) + '°, ' + coords[0].toFixed(2) + '°</p>';
     if (p.location_source) result += '<p>Location: ' + esc(p.location_source) + '</p>';
     if (p.supplement_sources?.length) result += '<p>Same-time supplementary values: ' + esc([...new Set(p.supplement_sources)].join(', ')) + '</p>';
+    if (p.level_hpa && p.field_sources) result += '<p>Field provenance: ' + Object.entries(p.field_sources).map(([field, source]) => esc(field) + ': ' + esc(source)).join('; ') + '</p>';
+    if (p.sampling_policy) result += '<p>' + esc(p.sampling_policy) + '</p>';
+    if (p.quality_control) result += '<p>' + esc(p.quality_control) + '</p>';
+    if (p.profile_match_method) result += '<p>Profile match: ' + esc(p.profile_match_method) + '</p>';
     if (p.level_hpa) result += '<button type="button" data-sounding-station="'+esc(p.station)+'" data-lat="'+coords[1]+'" data-lon="'+coords[0]+'">Open observed Skew-T</button>';
     return result + '</div>';
   }
