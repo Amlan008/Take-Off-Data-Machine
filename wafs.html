@@ -46,6 +46,9 @@
           <label for="regionOpacity">Region opacity <output id="regionOpacityValue">24%</output><input id="regionOpacity" type="range" min="0" max="70" value="24" /></label>
           <div class="region-key"><span style="color:#79a6ee">Cold</span> · <span style="color:#57c5ce">Cool</span> · <span style="color:#f0af60">Warm</span> · <span style="color:#ee7f88">Hot</span><br>Surface potential-temperature bins, not named source air masses. Dashed outline: drier; solid: moister. Advection patches: red warming / blue cooling / grey moisture-dominated. Blank: unsupported.</div>
         </details>
+        <label>DIAGNOSTIC ENGINE<select id="diagnosticEngine"><option value="v4" selected>V4 · baseline (default)</option><option value="v5">V5 · experimental challenger (surface)</option></select></label>
+        <label><input id="showV5Provisional" type="checkbox" checked />Include V5 provisional / exploratory objects</label>
+        <p id="engineStatus" class="diagnostic-note" aria-live="polite"></p>
         <p id="diagnosticStatus" class="diagnostic-note" aria-live="polite"></p>
         <div class="chart-buttons"><button id="chartRefresh" type="button">Refresh charts</button><button id="chartFullscreen" type="button">Full screen</button></div>
         <div class="chart-buttons"><button id="openSoundings" type="button" hidden>Soundings / Skew-T</button></div>
@@ -84,6 +87,6 @@
   <p class="sounding-note">Background: brown dashed dry adiabats; blue dashed moist adiabats (liquid-water pseudoadiabatic approximation); green dotted mixing-ratio lines. Wind: half barb 5 kt, full barb 10 kt, flag 50 kt.</p>
   <details><summary>Reported pressure-level values</summary><div class="sounding-values"><table><thead><tr><th>hPa</th><th>T °C</th><th>Td °C</th><th>RH %</th><th>Wind kt</th><th>From °</th></tr></thead><tbody id="soundingTable"></tbody></table></div></details>
 </dialog>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="sounding-plot.js?v=20261013a"></script><script src="chart-archive.js?v=20261016a"></script><script src="chart-review.js?v=20261016a"></script><script src="wafs.js?v=20261016review1"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="sounding-plot.js?v=20261013a"></script><script src="chart-archive.js?v=20261019v5"></script><script src="chart-review.js?v=20261019v5"></script><script src="diagnostic-comparison.js?v=20261019v5"></script><script src="wafs.js?v=20261019v5"></script>
 </body>
 </html>

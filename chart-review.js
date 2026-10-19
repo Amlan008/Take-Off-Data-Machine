@@ -14,7 +14,8 @@
     const ids=new Set([p.track_id,p.parent_track_id,...(p.candidate_parent_track_ids||[])].filter(Boolean));
     return (previous?.features||[]).filter(f =>
       (p.previous_feature_id && f.properties.feature_id===p.previous_feature_id) ||
-      (ids.has(f.properties.track_id) && f.properties.feature_type===p.feature_type));
+      (ids.has(f.properties.track_id) && f.properties.feature_type===p.feature_type))
+      .filter(f=>(f.properties.algorithm||'v4')===(p.algorithm||'v4'));
   }
   function create({map, panel, read, contextURL}) {
     panel.innerHTML=`<summary>HUMAN REVIEW · LOCAL DRAFT</summary>

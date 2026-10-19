@@ -23,6 +23,10 @@ on:
       - 'scripts/test_chart_archive.mjs'
       - 'chart-review.js'
       - 'scripts/test_chart_review.mjs'
+      - 'scripts/synoptic_v5.py'
+      - 'scripts/test_synoptic_v5.py'
+      - 'diagnostic-comparison.js'
+      - 'scripts/test_diagnostic_comparison.mjs'
       - 'chart-archive.js'
   workflow_dispatch:
     inputs:
@@ -61,8 +65,10 @@ jobs:
           python scripts/test_temporal_diagnostics.py
           python scripts/test_region_diagnostics.py
           python scripts/test_refinement.py
+          python scripts/test_synoptic_v5.py
           node scripts/test_chart_archive.mjs
           node scripts/test_chart_review.mjs
+          node scripts/test_diagnostic_comparison.mjs
       - name: Build surface, upper-air and synoptic diagnostics
         shell: bash
         env:

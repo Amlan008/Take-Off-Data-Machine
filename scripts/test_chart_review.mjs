@@ -16,6 +16,7 @@ const old={...feature,properties:{feature_type:'low',feature_id:'old',track_id:'
 assert.equal(key(feature),'current');assert.equal(matches(feature,{features:[old]}).length,1);
 assert.equal(matches(feature,{features:[{...old,properties:{feature_type:'ridge',track_id:'track'}}]}).length,0);
 assert.equal(matches({...feature,properties:{feature_type:'low'}},{features:[old]}).length,0);
+assert.equal(matches({...feature,properties:{...feature.properties,algorithm:'v5-experimental-1'}},{features:[old]}).length,0,'do not cross engine lineage');
 let click;
 const panel={querySelector:selector=>el(selector.slice(1))},map={getCenter:()=>({lng:80}),on(_,fn){click=fn;}};
 const api=create({map,panel,read:async()=>({properties:{version:4},features:[old]}),contextURL:'http://local/wafs.html'});

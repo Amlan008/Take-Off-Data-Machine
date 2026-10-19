@@ -9,6 +9,7 @@
       snapshots.push({kind,...entry});const base=kind+'/'+entry.path+'/';add(base+'metadata.json',true);
       if(kind==='surface') {
         add(base+'observations.geojson',true);add(base+'features.geojson',false);
+        add(base+'features-v5.geojson',false);
         if(includeGeometry)for(const name of ['pressure','pressure-shading','temperature','temperature-shading'])add(base+name+'.geojson',true);
       } else {
         add(base+'soundings.json',false);

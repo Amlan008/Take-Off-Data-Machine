@@ -1,0 +1,16 @@
+import vm from 'node:vm';
+import {readFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const context={};vm.createContext(context);
+vm.runInContext(await readFile(new URL('../diagnostic-comparison.js',import.meta.url),'utf8'),context);
+const api=context.DiagnosticComparison;
+assert.equal(api.engine('surface',undefined),'v4');assert.equal(api.engine('upper','v5'),'v4');
+assert.equal(api.file('surface',850,'v5'),'features-v5.geojson');
+assert.equal(api.file('upper',850,'v5'),'850-features.geojson');
+assert.equal(api.file('surface',850,'v4'),'features.geojson');
+assert.throws(()=>api.file('upper','../secret','v5'));
+const f={properties:{support_tier:'provisional_candidate'}};
+assert.equal(api.visible(f,'v4',false),true);assert.equal(api.visible(f,'v5',false),false);
+assert.equal(api.visible(f,'v5',true),true);
+assert.equal(api.visible({properties:{support_tier:'supported_candidate'}},'v5',false),true);
+console.log('Default engine, surface-only challenger, file routing and display-tier tests passed.');

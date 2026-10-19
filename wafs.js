@@ -106,7 +106,7 @@
     if (!$('showDiagnostics').checked) { $('diagnosticStatus').textContent='Synoptic diagnostics hidden.'; return; }
     if (!featureData) { $('diagnosticStatus').textContent='Diagnostics not published for this chart; run the updated chart builder.'; return; }
     const selected=new Set([...document.querySelectorAll('[data-feature]:checked')].flatMap((input)=>input.dataset.feature.split(',')));
-    const features=featureData.features.filter((f)=>selected.has(f.properties.feature_type));
+    const features=featureData.features.filter((f)=>selected.has(f.properties.feature_type)&&DiagnosticComparison.visible(f,$('diagnosticEngine').value,$('showV5Provisional').checked));
     const counts={}; for (const feature of features) counts[feature.properties.feature_type]=(counts[feature.properties.feature_type]||0)+1;
     $('diagnosticStatus').textContent='Experimental · '+features.length+' features: '+(Object.entries(counts).map(([type,count])=>type+' '+count).join(' · ')||'insufficient qualifying evidence')+($('chartKind').value==='surface' && featureData.properties?.status?.startsWith('No dew') ? ' · Dew point missing: moisture evidence unavailable; thermal detection remains eligible.' : '')+($('chartKind').value==='upper' && !['300','250','200'].includes($('chartLevel').value) ? ' · Jets: select 300, 250 or 200 hPa.' : '')+($('chartKind').value==='surface' ? ' · '+(featureData.properties?.temporal_status||'Temporal diagnostics not yet published for this chart.') : '');
     for (const feature of features) {
@@ -118,6 +118,12 @@
       if(p.frontogenesis_k_100km_3h!=null)evidence.push('Horizontal frontogenesis: '+fmt(p.frontogenesis_k_100km_3h,'K/100 km/3 h')+' · '+p.frontogenesis_state);
       if(p.vertical_structure_status)evidence.push('Vertical structure: '+p.vertical_structure_status);
       if(p.track_id)evidence.push('Track: '+p.track_id+' · '+p.tracking_status);
+      if(p.algorithm)evidence.push('Engine: '+p.algorithm);
+      if(p.support_index!=null)evidence.push('Evidence index '+p.support_index+'/100 · '+p.support_tier+' · assessed weight '+p.assessed_weight+'/100 · not a probability');
+      if(p.evidence_groups)for(const [name,g] of Object.entries(p.evidence_groups))evidence.push(name.replaceAll('_',' ')+': '+g.state+' · '+g.points+'/'+g.weight+' points');
+      if(p.closure)evidence.push('Closure: '+p.closure.closure_status+' · supported depth lower bound '+(p.closure.enclosure_depth_lower_bound_hpa??'unknown')+' hPa');
+      if(p.cyclone_structure)evidence.push('Cyclone structure: '+p.cyclone_structure);
+      if(p.evidence_limitations)evidence.push(...p.evidence_limitations);
       const detail='<div class="obs-popup"><b>'+esc(label)+'</b><p>'+utc(featureData.properties.valid_time)+'<br>Experimental diagnostic · '+esc(p.confidence)+' support'+(p.level_hpa ? '<br>'+p.level_hpa+' hPa' : '')+(p.observation_count!=null ? '<br>'+p.observation_count+' surrounding reports · nearest '+p.nearest_observation_km+' km' : '')+(p.previous_time ? '<br>Previous: '+utc(p.previous_time)+' · '+p.comparison_hours+' h comparison' : '')+'</p><p>'+evidence.map(esc).join('<br>')+'</p>'+(p.central_pressure_hpa ? '<p>Central analysed pressure: '+fmt(p.central_pressure_hpa,'hPa')+'</p>' : '')+(p.maximum_wind_kt ? '<p>Maximum analysed wind: '+fmt(p.maximum_wind_kt,'kt')+'</p>' : '')+gray+'</div>';
       if (feature.geometry.type==='Point') {
         const [lon,lat]=feature.geometry.coordinates,shift=360*Math.round((map.getCenter().lng-lon)/360);
@@ -187,13 +193,18 @@
     const id = ++requestId, kind = $('chartKind').value, chosen = entries().find((entry) => entry.path === $('chartTime').value);
     if (!chosen) { points = []; activeBands = null; featureData=null; diagnostics.clearLayers(); stations.clearLayers(); contours.clearLayers(); shading.clearLayers(); renderDiagnostics(); $('chartSummary').textContent = ''; setStatus('No ' + kind + ' chart has been published yet.', true); return; }
     const level = $('chartLevel').value, field = $('chartField').value;
+    if(kind==='upper')$('diagnosticEngine').value='v4';
+    const engine=DiagnosticComparison.engine(kind,$('diagnosticEngine').value);
+    $('diagnosticEngine').disabled=kind!=='surface';
+    $('engineStatus').textContent=kind==='upper'?'Upper-air diagnostics use V4; challenger comparison is surface-only.':engine==='v5'?'V5 experimental Phase A: shared primitive extraction, separate evidence policy. Scores are not probabilities.':'V4 baseline. Both engines use the same source observations; V4 remains the default.';
     const base = kind + '/' + chosen.path + '/';
     const pointFile = base + (kind === 'upper' ? level + '-' : '') + 'observations.geojson';
     const contourFile = base + (kind === 'upper' ? level + '-' : '') + field + '.geojson';
     points = []; activeBands = null; featureData=null; diagnostics.clearLayers(); stations.clearLayers(); contours.clearLayers(); shading.clearLayers(); $('diagnosticStatus').textContent='Loading diagnostics…'; $('chartSummary').textContent = '';
     setStatus('Loading ' + utc(chosen.valid_time) + ' observations…');
     try {
-      const diagnosticFile=base+(kind==='upper'?level+'-':'')+'features.geojson';
+      const diagnosticName=DiagnosticComparison.file(kind,level,engine);
+      const diagnosticFile=base+diagnosticName;
       const [data, lines, bands, detected] = await Promise.all([json(pointFile), field !== 'wind' && $('showContours').checked ? json(contourFile).catch(error=>{if(field==='pressure-tendency')return null;throw error;}) : Promise.resolve(null), ['temperature','pressure'].includes(field) ? json(contourFile.replace('.geojson', '-shading.geojson')) : Promise.resolve(null), json(diagnosticFile).catch(()=>null)]);
       if (id !== requestId) return;
       points = data.features || []; activeMetadata = chosen;
@@ -214,10 +225,13 @@
       }
       featureData=detected;
       const prior=entries().filter(entry=>Date.parse(entry.valid_time)<Date.parse(chosen.valid_time)).sort((a,b)=>Date.parse(b.valid_time)-Date.parse(a.valid_time))[0];
-      review.setContext({kind,level_hpa:kind==='upper'?Number(level):null,path:chosen.path,valid_time:chosen.valid_time,
+      if(engine==='v5'&&(!detected||detected.properties?.status==='Challenger failed; V4 retained'))$('engineStatus').textContent='V5 unavailable for this cycle. No V4 fallback is being shown as V5. Rebuild diagnostics or choose V4.';
+      if(engine==='v4'&&detected?.properties?.method?.includes('v3'))$('engineStatus').textContent+=' Loaded file is legacy V3; regenerate for a V4 comparison.';
+      if(detected?.properties?.analysis_bounds)$('engineStatus').textContent+=' Regional offline replay only: '+detected.properties.analysis_bounds.join(', ')+' (west, south, east, north).';
+      review.setContext({kind,algorithm:engine,level_hpa:kind==='upper'?Number(level):null,path:chosen.path,valid_time:chosen.valid_time,
         published_at:chosen.published_at||null,manifest_generated_at:manifest.generated_at,software:manifest.software||null,
-        diagnostics:detected?.properties||{},previous:prior?{valid_time:prior.valid_time,file:kind+'/'+prior.path+'/'+(kind==='upper'?level+'-':'')+'features.geojson'}:null,
-        previous_charts:entries().filter(entry=>Date.parse(entry.valid_time)<Date.parse(chosen.valid_time)).map(entry=>({valid_time:entry.valid_time,file:kind+'/'+entry.path+'/'+(kind==='upper'?level+'-':'')+'features.geojson'}))});
+        diagnostics:detected?.properties||{},previous:prior?{valid_time:prior.valid_time,file:kind+'/'+prior.path+'/'+diagnosticName}:null,
+        previous_charts:entries().filter(entry=>Date.parse(entry.valid_time)<Date.parse(chosen.valid_time)).map(entry=>({valid_time:entry.valid_time,file:kind+'/'+entry.path+'/'+diagnosticName}))});
       renderDiagnostics(); renderStations();
       const usable = points.filter((point) => Number.isFinite(point.properties[fieldName()])).length;
       const age = (Date.now() - Date.parse(chosen.valid_time)) / 3600000;
@@ -291,6 +305,8 @@
     shading.eachLayer((layer) => layer.setStyle({ fillOpacity: shadeOpacity }));
   });
   $('chartField').addEventListener('change', draw); $('chartLevel').addEventListener('change', draw);
+  $('diagnosticEngine').addEventListener('change',draw);
+  $('showV5Provisional').addEventListener('change',renderDiagnostics);
   $('showStations').addEventListener('change', renderStations); $('showContours').addEventListener('change', draw);
   $('showDiagnostics').addEventListener('change',renderDiagnostics);
   $('regionOpacity').addEventListener('input',(event)=>{regionOpacity=Number(event.target.value)/100;$('regionOpacityValue').textContent=event.target.value+'%';diagnostics.eachLayer(layer=>{if(layer.options?.pane==='diagnosticAreas')layer.setStyle({fillOpacity:regionOpacity});});});

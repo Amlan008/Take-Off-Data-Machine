@@ -418,7 +418,7 @@ def points(rows, target):
                        for row in rows], valid_time=iso(target), data_type='observations')
 
 
-def analysis_grid(rows, field, radius_km, diagnostic=False):
+def analysis_grid(rows, field, radius_km, diagnostic=False, bounds=None):
     samples = [row for row in rows if row.get(field) is not None]
     if len(samples) < 4:
         return None
@@ -426,6 +426,11 @@ def analysis_grid(rows, field, radius_km, diagnostic=False):
     lon = np.radians([row['longitude'] for row in samples])
     locations = np.column_stack((np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)))
     x, y = np.arange(-180, 180, .5), np.arange(-85, 85.1, .5)
+    if bounds is not None:
+        west,south,east,north=bounds
+        if not (-180<=west<east<=180 and -75<=south<north<=75 and east-west>=5 and north-south>=5):
+            raise ValueError('Regional replay requires ordered bounds, at least 5 degrees per side, outside polar caps')
+        x,y=np.arange(west,east+.01,.5),np.arange(south,north+.01,.5)
     xx, yy = np.meshgrid(x, y)
     a, b = np.radians(yy.ravel()), np.radians(xx.ravel())
     targets = np.column_stack((np.cos(a) * np.cos(b), np.cos(a) * np.sin(b), np.sin(a)))
@@ -462,10 +467,12 @@ def analysis_grid(rows, field, radius_km, diagnostic=False):
     # Normalized convolution prevents missing cells contaminating valid fields;
     # longitude wraps, latitude does not. Preserve the original support mask.
     sigma=.8 if diagnostic else 1.4
-    denominator = gaussian_filter(valid.astype(float), sigma, mode=('nearest', 'wrap'))
-    grid = gaussian_filter(np.where(valid, grid, 0), sigma, mode=('nearest', 'wrap')) / np.maximum(denominator, 1e-12)
-    grid = np.ma.array(np.column_stack((grid, grid[:, 0])), mask=~np.column_stack((valid, valid[:, 0])))
-    return np.append(x, 180), y, grid
+    mode=('nearest','wrap' if bounds is None else 'nearest')
+    denominator = gaussian_filter(valid.astype(float), sigma, mode=mode)
+    grid = gaussian_filter(np.where(valid, grid, 0), sigma, mode=mode) / np.maximum(denominator, 1e-12)
+    guard=0 if bounds is None else -1
+    grid = np.ma.array(np.column_stack((grid, grid[:, guard])), mask=~np.column_stack((valid, valid[:, guard])))
+    return np.append(x,180 if bounds is None else x[-1]+.5), y, grid
 
 
 def smooth_line(line):
@@ -535,14 +542,14 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def diagnostic_grids(rows, kind, primary=None):
+def diagnostic_grids(rows, kind, primary=None, bounds=None):
     if kind == 'surface': prepare_thermodynamics(rows)
     eligible = rows if kind == 'upper' else [row for row in rows if (row.get('elevation_m') or 0) <= 800]
     radius = 2000 if kind == 'upper' else 1500
     field = 'height_m' if kind == 'upper' else 'mslp_hpa'
-    result = {field: analysis_grid(eligible,field,2000,diagnostic=True)}
+    result = {field: analysis_grid(eligible,field,2000,diagnostic=True,bounds=bounds)}
     for name in ('u_ms', 'v_ms', 'temperature_c', 'dewpoint_c') + (('theta_k', 'theta_e_k', 'mixing_ratio_gkg') if kind == 'surface' else ()):
-        result[name] = analysis_grid(eligible, name, radius, diagnostic=True)
+        result[name] = analysis_grid(eligible, name, radius, diagnostic=True,bounds=bounds)
     return result
 
 
@@ -614,6 +621,21 @@ def build_chart(output, kind, target, rows, errors, upper_context=None, diagnost
             diagnostic['properties']['analysis_policy']={'grid_degrees':.5,'minimum_weight_scale_km':90,'smoothing_sigma_cells':.8,'display_analysis_separate':True,'confidence':'qualitative, not calibrated probabilities'}
             diagnostic['properties']['valid_time'] = iso(target)
             write_json(folder / 'features.geojson', diagnostic)
+            # Challenger failures must not prevent baseline observations publishing.
+            previous_v5=None
+            if previous_time:
+                prior_path=output/'surface'/datetime.fromisoformat(previous_time).strftime('%Y%m%d%H')/'features-v5.geojson'
+                try: previous_v5=json.loads(prior_path.read_text())
+                except (OSError,ValueError): pass
+            try:
+                from synoptic_v5 import diagnose_v5
+                challenger=diagnose_v5(rows,grids,iso(target),previous_v5,previous_rows,previous_grids,previous_time,
+                                      upper_context if upper_context is not None else sounding_context(output,target),smooth_line)
+                challenger['properties']['builder_commit']=os.environ.get('GITHUB_SHA') or 'local-unversioned'
+            except Exception as error:
+                print(f'V5 challenger unavailable: {type(error).__name__}: {error}',flush=True)
+                challenger=collection([],algorithm='v5-experimental-1',valid_time=iso(target),status='Challenger failed; V4 retained',error_type=type(error).__name__)
+            write_json(folder/'features-v5.geojson',challenger)
             # Same-station tendencies are calculated during temporal enrichment.
             write_json(folder / 'observations.geojson', points(rows,target))
             write_json(folder / 'pressure-tendency.geojson',contours(rows,'pressure_change_hpa_3h',1,1000))
@@ -715,7 +737,7 @@ def main():
         manifest = json.loads(path.read_text())
         for kind in (('surface', 'upper') if args.reprocess_kind == 'all' else (args.reprocess_kind,)):
             updated = []
-            for entry in manifest[kind]:
+            for entry in sorted(manifest[kind],key=lambda e:e['valid_time']):
                 folder = args.output / kind / entry['path']
                 rows = []
                 files = [folder / 'observations.geojson'] if kind == 'surface' else [folder / f'{level}-observations.geojson' for level in LEVELS if (folder / f'{level}-observations.geojson').exists()]
@@ -728,7 +750,7 @@ def main():
                 result = build_chart(args.output, kind, datetime.fromisoformat(entry['valid_time']), rows, entry.get('feed_errors', []), diagnostics_only=args.diagnostics_only, contours_only=args.contours_only)
                 updated.append(result)
                 print(f'Reprocessed {kind} {entry["path"]}: {len(rows)} reports', flush=True)
-            manifest[kind] = updated
+            manifest[kind] = sorted(updated,key=lambda e:e['valid_time'],reverse=True)
         manifest.update(generated_at=iso(now), pressure_policy=policy, analysis_version=2, diagnostics_version=4,software=analysis_software())
         write_json(path, manifest)
         return

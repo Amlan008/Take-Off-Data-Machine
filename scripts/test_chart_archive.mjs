@@ -14,10 +14,11 @@ assert.ok(api.plan(manifest,null,true).files.some(f=>f.path.includes('shading'))
 assert.throws(()=>api.plan({...manifest,surface:[{...entry,path:'../../secret'}]},null));
 assert.throws(()=>api.plan({...manifest,levels_hpa:['../../x']},null));
 let active=0,maximum=0,progress=0;
-const read=async path=>{active++;maximum=Math.max(maximum,active);await new Promise(r=>setTimeout(r,1));active--;if(path.endsWith('features.geojson'))throw Error('legacy unavailable');return path.endsWith('metadata.json')?entry:{type:'FeatureCollection',features:[]};};
+const read=async path=>{active++;maximum=Math.max(maximum,active);await new Promise(r=>setTimeout(r,1));active--;if(/features(?:-v5)?\.geojson$/.test(path))throw Error('legacy unavailable');return path.endsWith('metadata.json')?entry:{type:'FeatureCollection',features:[]};};
 const archive=await api.collect(manifest,{read,progress:(done)=>{progress=done;}});
 assert.ok(maximum<=3);assert.equal(progress,api.plan(manifest,null).files.length);
-assert.equal(archive.missing_optional_files.length,3);
+assert.equal(archive.missing_optional_files.length,4);
+assert.ok(api.plan(manifest,null).files.some(f=>f.path.endsWith('features-v5.geojson')&&!f.required));
 assert.equal(archive.format,'weather-machine-research-archive');
 const packed=await api.encode(archive);assert.equal(packed.extension,'.json.gz');
 const roundtrip=JSON.parse(gunzipSync(Buffer.from(await packed.blob.arrayBuffer())));

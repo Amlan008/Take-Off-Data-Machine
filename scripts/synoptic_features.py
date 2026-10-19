@@ -137,7 +137,7 @@ def distance_km(a,b):
     return 2*math.asin(min(1,chord/2))*EARTH
 
 
-def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=None, valid_time=None):
+def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=None, valid_time=None, pressure_axis_flow_required=True):
     first=next((g for g in grids.values() if g is not None),None)
     if first is None: return {'type':'FeatureCollection','features':[], 'properties':{'status':'No analysed fields'}}
     x,y=first[0][:-1],first[1]
@@ -185,10 +185,10 @@ def diagnose(rows, grids, kind, level=None, smooth=lambda line:line, upper_rows=
     if valid.any():
         for ridge in (False,True):
             mask=axis_mask(z,valid,x,y,ridge) & ((residual> (15 if upper else .8)) if ridge else (residual<(-15 if upper else -.8)))
-            if ridge and not upper:
+            if ridge and not upper and pressure_axis_flow_required:
                 mask &= wind_valid & ((shear < -3e-6) | (convergence < -3e-6)) if shear is not None else False
             add_lines(mask,'ridge' if ridge else 'trough',('Upper-air ' if upper else 'Surface ')+('ridge' if ridge else 'trough'),
-                      ['Transverse '+('height' if upper else 'pressure')+' extremum','Broad-field anomaly; surrounding reports']+(['Anticyclonic vorticity or divergent-flow support'] if ridge and not upper else []),500 if upper else 350)
+                      ['Transverse '+('height' if upper else 'pressure')+' extremum','Broad-field anomaly; surrounding reports']+(['Anticyclonic vorticity or divergent-flow support'] if ridge and not upper and pressure_axis_flow_required else []),500 if upper else 350)
     centers=[]
     if not upper and valid.any():
         for high in (False,True):
