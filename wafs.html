@@ -26,60 +26,70 @@
     #chartReview input:not([type=checkbox]),#chartReview textarea{display:block;width:100%;box-sizing:border-box;margin-top:5px;padding:8px;border:1px solid #42606b;background:#172b34;color:#f2f5f5;font:12px 'DM Sans',sans-serif}
     #chartReview button{padding:7px 8px}#chartReview textarea{resize:vertical}
   </style>
+  <link rel="stylesheet" href="observation-workspace.css?v=20261109a" />
 </head>
 <body>
 <main class="chart-shell">
-  <header class="chart-header"><div class="eyebrow"><span></span> GLOBAL WEATHER OBSERVATIONS</div>
-    <nav class="app-nav" aria-label="Application sections"><a href="index.html">Home</a><a href="aerodrome-forecast.html">Aerodrome Forecast</a><a href="storms.html">Storm systems</a><a href="ash.html">Volcanic Ash Advisories</a><a href="weather-analyzer.html">Weather Analyzer</a><a class="active" href="wafs.html">Observation Charts</a></nav>
-    <h1>Surface &amp;<br /><em>Upper-air Charts</em></h1>
-    <p>Surface observation charts every three hours; upper-air observations at 00/12 UTC. Builds are requested 30 minutes after each surface cycle.</p>
+  <a class="chart-skip" href="#chartStage">Skip to chart workspace</a>
+  <header class="workspace-masthead">
+    <a class="workspace-brand" href="index.html" aria-label="Weather machine home"><span class="workspace-orbit" aria-hidden="true">◎</span> Weather <em>machine<span>.</span></em></a>
+    <nav aria-label="Application sections"><a href="aerodrome-forecast.html">Aerodrome</a><a href="storms.html">Storms</a><a href="ash.html">Volcanic ash</a><a href="weather-analyzer.html">Analyzer</a><a href="wafs.html" aria-current="page">Observation charts</a></nav>
   </header>
-  <section class="chart-stage" id="chartStage">
+  <header class="chart-header">
+    <div><div class="workspace-eyebrow">THE OBSERVATION DESK <span>/ 01</span></div><h1>Read the <em>atmosphere.</em></h1><p>Surface &amp; upper-air observations, brought into one analytical workspace.</p></div>
+    <div class="workspace-cadence"><span>OBSERVATION CYCLES · UTC</span><strong>Surface <b>every 3 hours</b></strong><strong>Upper air <b>00 / 12 Z</b></strong></div>
+  </header>
+  <section class="chart-stage" id="chartStage" aria-label="Observation chart workspace" tabindex="-1">
+    <div class="workspace-toolbar"><div class="workspace-toolbar-title"><span class="workspace-dot" aria-hidden="true"></span><strong>Observation charts</strong><span>Experimental analysis</span></div><div class="workspace-actions"><button id="workspaceControls" type="button" aria-controls="chartControls" aria-expanded="true">Hide controls</button><button id="chartRefresh" type="button">Refresh charts</button><button id="openSoundings" type="button" hidden>Soundings / Skew-T</button><button id="chartFullscreen" type="button">Full screen</button></div></div>
+
     <div id="observationMap" aria-label="Interactive surface and upper-air observation charts"></div>
-    <div class="chart-controls">
-      <details open><summary>CHART CONTROLS</summary>
+    <aside class="chart-controls" id="chartControls" aria-label="Chart settings">
+      <div class="sidebar-heading"><span>CHART SETTINGS</span><span aria-hidden="true">01—04</span></div>
+      <details open id="primaryChartControls"><summary>01 / Chart &amp; display</summary>
         <label>CHART TYPE<select id="chartKind"><option value="surface">Surface · every 3 hours</option><option value="upper">Upper air · 00/12 UTC</option></select></label>
         <div class="chart-pair"><label>PARAMETER<select id="chartField"><option value="pressure">Mean sea-level pressure</option><option value="pressure-tendency">Pressure change / 3 h</option><option value="wind">Wind</option><option value="temperature">Air temperature</option></select></label><label>PRESSURE LEVEL<select id="chartLevel" disabled><option value="925">925 hPa</option><option value="850" selected>850 hPa</option><option value="800">800 hPa</option><option value="700">700 hPa</option><option value="600">600 hPa</option><option value="500">500 hPa</option><option value="400">400 hPa</option><option value="300">300 hPa</option><option value="250">250 hPa</option><option value="200">200 hPa</option><option value="150">150 hPa</option><option value="100">100 hPa</option></select></label></div>
         <div class="chart-switches"><label><input id="showStations" type="checkbox" checked />Station plots</label><label><input id="showContours" type="checkbox" checked />Contours</label></div>
         <div class="chart-switches"><label><input id="showDiagnostics" type="checkbox" checked />Synoptic diagnostics</label></div>
-        <details id="featureOptions" open style="margin-top:12px"><summary>FEATURE LAYERS · EXPERIMENTAL</summary><div class="feature-switches"><label><input type="checkbox" data-feature="high,low" checked />High / Low</label><label><input type="checkbox" data-feature="trough,ridge" checked />Trough / Ridge</label><label><input type="checkbox" data-feature="front" checked />Front candidates</label><label><input type="checkbox" data-feature="thermal_boundary" />Thermal boundaries</label><label><input type="checkbox" data-feature="moisture_boundary" />Moisture boundaries</label><label><input type="checkbox" data-feature="wind_boundary" />Wind boundaries</label><label><input type="checkbox" data-feature="airmass_region" checked />Air-mass regions</label><label><input type="checkbox" data-feature="advection_region" />Advection regions</label><label><input type="checkbox" data-feature="airmass" />Flow arrows</label><label><input type="checkbox" data-feature="jet" checked />Jet streams</label><label><input type="checkbox" data-feature="cyclone,warm_core,tropical,extratropical" checked />Cyclonic lows / factors</label></div>
+        </details><details id="featureOptions"><summary>02 / Synoptic diagnostics</summary><p class="panel-hint">Automated candidates. Select a feature on the map to inspect its evidence.</p><div class="feature-switches"><label><input type="checkbox" data-feature="high,low" checked />High / Low</label><label><input type="checkbox" data-feature="trough,ridge" checked />Trough / Ridge</label><label><input type="checkbox" data-feature="front" checked />Front candidates</label><label><input type="checkbox" data-feature="thermal_boundary" />Thermal boundaries</label><label><input type="checkbox" data-feature="moisture_boundary" />Moisture boundaries</label><label><input type="checkbox" data-feature="wind_boundary" />Wind boundaries</label><label><input type="checkbox" data-feature="airmass_region" checked />Air-mass regions</label><label><input type="checkbox" data-feature="advection_region" />Advection regions</label><label><input type="checkbox" data-feature="airmass" />Flow arrows</label><label><input type="checkbox" data-feature="jet" checked />Jet streams</label><label><input type="checkbox" data-feature="cyclone,warm_core,tropical,extratropical" checked />Cyclonic lows / factors</label></div>
           <label for="regionOpacity">Region opacity <output id="regionOpacityValue">24%</output><input id="regionOpacity" type="range" min="0" max="70" value="24" /></label>
           <div class="region-key"><span style="color:#79a6ee">Cold</span> · <span style="color:#57c5ce">Cool</span> · <span style="color:#f0af60">Warm</span> · <span style="color:#ee7f88">Hot</span><br>Surface potential-temperature bins, not named source air masses. Dashed outline: drier; solid: moister. Advection patches: red warming / blue cooling / grey moisture-dominated. Blank: unsupported.</div>
-        </details>
         <label>DIAGNOSTIC ENGINE<select id="diagnosticEngine"><option value="v4" selected>V4 · baseline (default)</option><option value="v5">V5 · experimental challenger (surface)</option></select></label>
         <label><input id="showV5Provisional" type="checkbox" checked />Include V5 provisional / exploratory objects</label>
         <p id="engineStatus" class="diagnostic-note" aria-live="polite"></p>
         <p id="diagnosticStatus" class="diagnostic-note" aria-live="polite"></p>
-        <div class="chart-buttons"><button id="chartRefresh" type="button">Refresh charts</button><button id="chartFullscreen" type="button">Full screen</button></div>
-        <div class="chart-buttons"><button id="openSoundings" type="button" hidden>Soundings / Skew-T</button></div>
-        <details id="chartReview" style="margin-top:13px"></details>
-        <details style="margin-top:13px"><summary>RESEARCH DOWNLOAD</summary>
+        </details>
+        <details id="chartReview"></details>
+        <details class="research-download"><summary>04 / Research archive</summary>
           <label>ARCHIVE SCOPE<select id="archiveScope"><option value="history">All available history (rolling 48 h)</option><option value="selected">Selected chart only (limited context)</option></select></label>
           <label><input id="archiveGeometry" type="checkbox" />Include contours / shading (larger file)</label>
           <div class="chart-buttons"><button id="chartDownload" type="button" disabled>Download research archive</button></div>
           <p class="chart-status">Observations, soundings where available, diagnostics and metadata. Saves .json.gz (or .json fallback), not a map image. No upstream weather API calls.</p>
           <p id="archiveStatus" class="chart-status" role="status" aria-live="polite"></p>
         </details>
-      </details>
+      <div class="sidebar-status-label">CHART STATUS</div>
       <p id="chartStatus" class="chart-status" aria-live="polite">Loading observation charts…</p>
-    </div>
-    <div class="chart-legend-tools">
+    </aside>
+    <details class="chart-legend-tools" open><summary>Colour scale &amp; shading</summary><div class="legend-content">
       <div id="chartLegend" class="chart-legend"><b>Surface pressure analysis</b>Reported MSLP plus labelled airport estimates.</div>
       <div id="shadeControl" class="shade-control">
         <label for="shadeTransparency">Shade transparency <output id="shadeTransparencyValue" for="shadeTransparency">48%</output></label>
         <input id="shadeTransparency" type="range" min="0" max="100" value="48" step="1" />
         <div class="shade-endpoints"><span>Opaque</span><span>Clear</span></div>
       </div>
-    </div>
-    <div class="chart-timeline"><label for="chartTime">CHART TIME · UTC</label><select id="chartTime" disabled><option>No charts available</option></select><input id="chartSlider" type="range" min="0" max="0" value="0" disabled aria-label="Select chart valid time" /></div>
+    </div></details>
+    <div class="chart-timeline"><label for="chartTime">VALID TIME · UTC</label><select id="chartTime" disabled><option>No charts available</option></select><input id="chartSlider" type="range" min="0" max="0" value="0" disabled aria-label="Select chart valid time" /></div>
   </section>
-  <p id="chartSummary" class="chart-source-note" aria-live="polite"></p>
+  <div class="workspace-provenance"><span class="workspace-eyebrow">PUBLICATION &amp; COVERAGE</span><p id="chartSummary" class="chart-source-note" aria-live="polite"></p>
+  </div>
+  <details class="analysis-notes"><summary>How to read this analysis <span>Methods, symbols &amp; data sources</span></summary>
   <p class="chart-source-note">Experimental automated analyses, not official advisories. H/L: pressure extrema; dashed red/blue: trough/ridge; blue triangles: cold-front candidates; red semicircles: warm-front candidates; alternating opposite-side symbols: stationary candidates; purple paired symbols: occlusion candidates; dashed orange: unclassified boundaries. Purple arrows: jet candidates ≥60 kt. Air-mass patches show supported thermal/moisture regions, not source attribution or tracked parcels; optional advection patches show diagnosed warming/cooling. Front types require agreement along the boundary and temporal, thermal and wind evidence; ambiguous evidence stays unclassified. Click a feature for evidence. Cyclonic lows show a Gray-style environmental checklist, not a genesis probability. Ocean heat and organized convection are unassessed; warm-core evidence alone never establishes tropical-cyclone status.</p>
   <p class="chart-source-note">Smooth contours combine land, airport and marine observations. Reported MSLP is preferred; where missing, airport QNH is converted to estimated station pressure using the standard atmosphere, then reduced to sea level using temperature and elevation. These estimates are labelled and given lower weight, especially over high terrain. Temperature charts include a °C colour scale. Interpolation extends across oceans within 2000 km for pressure/upper-air fields and 1500 km for surface temperature, requiring at least three reports; sparse-area values are less certain and unsupported areas remain blank. No model background is used. Wind barbs retain platform measurement differences. Upper-air charts show nominal sounding times; click a station for values and launch time.</p>
   <p class="chart-source-note">Sources: <a href="https://madis.ncep.noaa.gov/madis_sfc.shtml" target="_blank" rel="noopener">NOAA MADIS METAR and maritime</a> · <a href="https://opendata.dwd.de/weather/weather_reports/synoptic/international/" target="_blank" rel="noopener">DWD international SYNOP</a> · <a href="https://madis.ncep.noaa.gov/madis_raob.shtml" target="_blank" rel="noopener">NOAA MADIS radiosonde (primary)</a> · <a href="https://weather.uwyo.edu/upperair/sounding.shtml" target="_blank" rel="noopener">University of Wyoming radiosondes (gap fill)</a>. Each three-hourly run rechecks the latest and preceding 00/12 UTC sounding cycle for late reports. Recent charts are retained for 48 hours.</p>
+  </details>
+  <footer class="workspace-footer"><a href="index.html">← Back to the workbench</a><span>OBSERVATIONS FIRST. PROFESSIONAL JUDGEMENT ALWAYS.</span></footer>
 </main>
 <dialog id="soundingDialog" class="sounding-dialog" aria-labelledby="soundingTitle">
-  <div class="sounding-heading"><h2 id="soundingTitle">Observed Skew-T</h2><button id="soundingClose" type="button" aria-label="Close sounding">Close ×</button></div>
+  <div class="sounding-heading"><div><span class="workspace-eyebrow">THE VERTICAL PICTURE</span><h2 id="soundingTitle">Observed Skew-T</h2></div><button id="soundingClose" type="button" aria-label="Close sounding">Close ×</button></div>
   <label for="soundingStation">Sounding station</label><select id="soundingStation"></select>
   <p id="soundingMeta"></p><p id="soundingWarning" role="status"></p>
   <div class="sounding-key"><span style="color:#c62828">━━ Temperature</span><span style="color:#087f4b">━━ Dew point</span></div>
@@ -87,6 +97,7 @@
   <p class="sounding-note">Background: brown dashed dry adiabats; blue dashed moist adiabats (liquid-water pseudoadiabatic approximation); green dotted mixing-ratio lines. Wind: half barb 5 kt, full barb 10 kt, flag 50 kt.</p>
   <details><summary>Reported pressure-level values</summary><div class="sounding-values"><table><thead><tr><th>hPa</th><th>T °C</th><th>Td °C</th><th>RH %</th><th>Wind kt</th><th>From °</th></tr></thead><tbody id="soundingTable"></tbody></table></div></details>
 </dialog>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="sounding-plot.js?v=20261019wyoming"></script><script src="chart-archive.js?v=20261019v5"></script><script src="chart-review.js?v=20261019v5"></script><script src="diagnostic-comparison.js?v=20261019v5"></script><script src="wafs.js?v=20261019wyoming"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="sounding-plot.js?v=20261019wyoming"></script><script src="chart-archive.js?v=20261019v5"></script><script src="chart-review.js?v=20261019v5"></script><script src="diagnostic-comparison.js?v=20261019v5"></script><script src="wafs.js?v=20261109workspace"></script>
+<script src="observation-workspace.js?v=20261109a"></script>
 </body>
 </html>

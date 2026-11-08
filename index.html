@@ -1,20 +1,87 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Weather machine</title>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Libre+Baskerville:ital,wght@0,400;1,400&display=swap" rel="stylesheet" />
-    <style>
-      body{margin:0;background:#07131b;color:#eef4f6;font-family:'DM Sans',sans-serif}main{min-height:100vh;padding:56px 7%;background:url('assets/home-star-field.jpg') center/cover fixed}.top{display:flex;justify-content:space-between;border-bottom:1px solid #b9cbd2;padding-bottom:18px;font:500 11px 'DM Mono',monospace;letter-spacing:.12em}.hero{padding:84px 0 65px}.eyebrow,.label{color:#8cbbd5;font:500 11px 'DM Mono',monospace;letter-spacing:.12em}h1,h1 em{font:400 clamp(54px,8vw,108px)/.84 'Libre Baskerville',Georgia,serif;letter-spacing:-.065em;font-style:normal;margin:25px 0;color:#eef4f6}h1 em{color:#8cbbd5}.i{position:relative}.i:after{content:'';position:absolute;width:.11em;height:.11em;left:50%;top:.1em;transform:translateX(-50%);border-radius:50%;background:#dc143c}.intro{max-width:450px;color:#d5e2dc;font-size:17px;line-height:1.5}.workspaces{border-top:1px solid #b9cbd2}.workspaces a{display:grid;grid-template-columns:1fr auto;gap:18px;padding:23px 4px;border-bottom:1px solid #b9cbd2;color:#eef4f6;text-decoration:none}.name{font-size:27px}.summary{color:#d5e2dc;font-size:13px}.developer-note{margin-top:62px;padding:26px 0;border-top:1px solid #b9cbd2;max-width:760px}.developer-note h2{font:400 1.18rem 'Libre Baskerville',Georgia,serif;margin:.35rem 0 .9rem}.developer-note p{color:#d5e2dc;line-height:1.7;margin:.8rem 0}.developer-note a{color:#8cbbd5}@media(max-width:650px){main{padding:32px 24px}.top{flex-direction:column;gap:10px}.hero{padding:55px 0 42px}.workspaces a{grid-template-columns:1fr}.summary{text-align:left}}
-    </style>
-  </head>
-  <body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0b1b22" />
+  <meta name="description" content="An independent aviation weather workbench. Explore airport forecasts, storm impacts, volcanic ash, weather reports and observation-based surface and upper-air charts." />
+  <title>Weather machine · A clearer view</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="home.css?v=20261109polish" />
+  <script src="home.js?v=20261109a" defer></script>
+</head>
+<body class="home" id="top">
+  <a class="skip-link" href="#workspaces">Skip to workspaces</a>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" /></symbol>
+    <symbol id="icon-chart" viewBox="0 0 32 32"><path d="M4 23c5-10 8-12 13-8s8 2 11-8M4 15c5-9 9-10 14-6s8 1 10-5M5 29c5-8 9-9 14-5s7 1 9-4"/><circle cx="15" cy="16" r="3"/></symbol>
+    <symbol id="icon-airport" viewBox="0 0 32 32"><path d="m16 3 3 10 10 6v3l-10-3v7l3 2v2l-6-2-6 2v-2l3-2v-7L3 22v-3l10-6 3-10Z"/></symbol>
+    <symbol id="icon-report" viewBox="0 0 32 32"><path d="M7 4h13l5 5v19H7ZM20 4v6h5M11 15h10M11 20h10M11 25h6"/></symbol>
+    <symbol id="icon-storm" viewBox="0 0 32 32"><path d="M24 5C13 0 3 11 6 20c3 8 15 8 19 1 3-5-1-12-6-11-6 0-9 8-4 12M8 27c12 5 21-7 18-16"/><circle cx="16" cy="16" r="3"/></symbol>
+    <symbol id="icon-ash" viewBox="0 0 32 32"><path d="m3 28 9-14h7l10 14ZM12 14l4 7 3-7M15 10c-8 0-10-8-5-9m8 9c8-3 7-10 2-9M7 28h17"/></symbol>
+  </svg>
+  <div class="page-shell">
+    <header class="masthead">
+      <a class="wordmark" href="index.html" aria-label="Weather machine home"><span class="brand-orbit" aria-hidden="true"></span><span>Weather <em>machine<span class="brand-dot">.</span></em></span></a>
+      <nav class="top-nav" aria-label="Main navigation"><a href="#workspaces">Workspaces</a><a href="#about">Our story</a><a href="mailto:amlanstudy@gmail.com">Get in touch <span aria-hidden="true">↗</span></a></nav>
+      <div class="utc-clock"><span class="clock-cross" aria-hidden="true">+</span><time id="utcClock">Times shown in UTC</time></div>
+    </header>
     <main>
-      <header class="top"><span>FLIGHT WEATHER WORKBENCH</span><span>AVIATION DECISION SUPPORT</span></header>
-      <section class="hero"><span class="eyebrow">OPERATIONAL LAUNCHPAD</span><h1>Weather<br /><em>mach<span class="i">ı</span>ne</em></h1><p class="intro">Aviation decision support for every shift. Select a workspace to assess aerodrome conditions, tropical systems, volcanic ash, global significant weather, or coded aviation weather.</p></section>
-      <nav class="workspaces"><a href="aerodrome-forecast.html"><span class="name">Aerodrome Forecast</span><span class="summary">Airport weather and graphical forecast</span></a><a href="storms.html"><span class="name">Storm Systems</span><span class="summary">Tracks, wind radii and airport impacts</span></a><a href="ash.html"><span class="name">Volcanic Ash Advisories</span><span class="summary">Advisories, polygons and airport screening</span></a><a href="weather-analyzer.html"><span class="name">Weather Analyzer</span><span class="summary">TAF and METAR operational screening</span></a><a href="wafs.html"><span class="name">Observation Charts</span><span class="summary">Surface and upper-air observations</span></a></nav>
-      <section class="developer-note"><span class="label">DEVELOPER'S NOTE</span><h2>Developer's Note</h2><p>The Take-off Data Machine is a personal project created by meteorologist <strong>Amlan Chatterjee</strong> and his wife, <strong>Swarnali Chakraborty</strong>, a professional Data Engineer.</p><p>As the application gradually reaches more users, we remain committed to improving it through better technology and community feedback. However, no tool can replace the knowledge, experience and judgement of pilots, dispatchers and meteorologists.</p><p>This application uses publicly available weather and aviation data and is intended only as supplementary guidance. It must not replace official products, operational procedures or professional judgement. The developers accept no liability for any consequences arising from its use.</p><p>Feedback and collaboration are welcome at <a href="mailto:amlanstudy@gmail.com"><strong>amlanstudy@gmail.com</strong></a>.</p></section>
+      <section class="hero" aria-labelledby="heroTitle">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> THE AVIATION WEATHER WORKBENCH</p>
+          <h1 id="heroTitle">A clearer view.<br /><em>A better briefing.</em></h1>
+          <p class="hero-description">From atmospheric detail to operational context.</p>
+          <p class="hero-detail">Observations, forecasts and weather hazards, brought together for the people who plan the flight.</p>
+          <div class="hero-actions"><a class="button-primary" href="#workspaces">Explore workspaces <svg aria-hidden="true"><use href="#icon-arrow" /></svg></a><a class="button-text" href="wafs.html">Go to observation charts <span aria-hidden="true">↗</span></a></div>
+          <div class="hero-footnote"><span class="small-cross" aria-hidden="true">✦</span> Independent by design. Informed by observations.</div>
+        </div>
+        <div class="atmosphere" role="img" aria-label="Decorative synoptic chart illustration. Not live weather data.">
+          <div class="chart-caption"><span>THE BIGGER PICTURE</span><span aria-hidden="true">↗</span></div>
+          <svg class="synoptic-art" viewBox="0 0 540 400" preserveAspectRatio="xMidYMid slice" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs><radialGradient id="chartGlow"><stop stop-color="#32545b" stop-opacity=".4"/><stop offset="1" stop-color="#10242c" stop-opacity="0"/></radialGradient><clipPath id="chartClip"><rect width="540" height="400" rx="8"/></clipPath></defs>
+            <g clip-path="url(#chartClip)">
+              <ellipse cx="260" cy="206" rx="270" ry="210" fill="url(#chartGlow)" />
+              <g stroke="#6b939b" stroke-opacity=".15" stroke-width=".8"><path d="M0 70h540M0 135h540M0 200h540M0 265h540M0 330h540M65 0v400M147 0v400M229 0v400M311 0v400M393 0v400M475 0v400"/><circle cx="276" cy="200" r="170"/><circle cx="276" cy="200" r="112"/></g>
+              <g fill="#264047" fill-opacity=".65" stroke="#5b7c80" stroke-opacity=".5" stroke-width="1"><path d="m109-8 20 39 41 20 22 31-8 31 26 27-5 37 24 32 9 39 25 12 9-33 16-22 5-40 35-20 20-38 26 5 18-25 36-4 20-43 52-18V-8Z"/><path d="m42 135 25 14 16 38 21 8 14 32-6 42-27 50-18-15-5-48-26-31-7-41Z"/><path d="m359 254 26 6 17-12 16 17 35 8 8 13-23 8-17-12-26 2-14-10-23-3Z"/><path d="m409 332 30-22 29 5 18 25-4 31-41 8-31-21Z"/><path d="m263 290 8 12-3 22-12-4-4-15Z"/></g>
+              <g stroke="#8caeb2" stroke-width="1.1" stroke-opacity=".55"><path d="M-30 101C54 57 97 56 128 101s-5 98 46 139 102-7 138 17 41 89 135 72 99-71 137-52"/><path d="M-24 123C46 83 89 76 112 115s-8 100 49 142 107-5 140 14 46 91 145 77 93-66 142-53"/><path d="M-30 146C35 110 74 100 94 133s-9 96 51 140 109 2 143 17 50 88 151 78 92-68 151-50"/><path d="M-25 169c53-28 89-45 104-17s-6 94 54 137 113 6 145 21 54 89 154 77"/><path d="M-20 194c43-23 71-38 85-14s-2 83 53 125 122 17 148 23"/></g>
+              <g stroke="#97c8b6" stroke-width="1.25" stroke-opacity=".8"><path d="M319 85c-38-35-111-37-147 1s-28 102 22 121 107-10 115-49-16-71-46-76-56 12-56 35 25 39 46 27"/><path d="M337 72C290 21 202 20 157 71s-29 124 29 150 126-3 147-49 0-91-37-105"/><path d="M353 56C295-9 186-5 140 53S101 197 168 232s152 2 182-45 23-110-23-136"/></g>
+              <path d="M11 352c85-75 129-80 214-57s170 31 290-94" stroke="#c89b68" stroke-width="1.3" stroke-dasharray="7 7" opacity=".9"/>
+              <g stroke="#c89b68" stroke-width="1.3"><path d="m329 281 9-4-2 10m45-39 8-6v10m42-47 7-6 1 10"/></g>
+              <g fill="#94b9c1"><circle cx="118" cy="178" r="2.5"/><circle cx="164" cy="134" r="2.5"/><circle cx="227" cy="219" r="2.5"/><circle cx="301" cy="173" r="2.5"/><circle cx="359" cy="199" r="2.5"/><circle cx="400" cy="267" r="2.5"/><circle cx="453" cy="144" r="2.5"/></g>
+              <g stroke="#94b9c1" stroke-width="1.1"><path d="m118 178 6-26 8 6m-9-2 8 6m33-28 13-23 6 7m-8-4 6 7m46 98-4-27 9 3m-8 1 8 4m69-5 14-23 6 7m38 42 22-16 2 10m-6-7 2 9m19 72 16-23 6 7m31-130 8-26 8 5"/></g>
+              <circle cx="246" cy="120" r="23" fill="#162e35" stroke="#8cb7a5" stroke-opacity=".5"/><text x="246" y="128" fill="#b1d3be" text-anchor="middle" font-family="Georgia,serif" font-size="25">H</text>
+              <circle cx="355" cy="307" r="22" fill="#182d33" stroke="#c89b68" stroke-opacity=".5"/><text x="355" y="315" fill="#e3b38a" text-anchor="middle" font-family="Georgia,serif" font-size="25">L</text>
+            </g>
+          </svg>
+          <div class="chart-bottom"><div><span class="chart-coordinate">OBSERVE / ANALYSE / PREPARE</span><p>From the station plot<br />to the synoptic picture.</p></div><span class="chart-key"><i></i> Schematic illustration<br /><small>Not live weather data</small></span></div>
+        </div>
+      </section>
+      <section class="observation-strip" aria-labelledby="updatesTitle">
+        <div class="strip-heading"><span class="eyebrow" id="updatesTitle">OBSERVATION DESK</span><span class="strip-subtitle">Latest published chart times</span></div>
+        <a class="data-update" href="wafs.html" aria-label="Surface chart publication status"><span class="data-label">SURFACE</span><time id="surfaceTime">Checking charts…</time><span class="data-state" id="surfaceState" data-state="loading">Checking</span></a>
+        <a class="data-update" href="wafs.html" aria-label="Upper-air chart publication status"><span class="data-label">UPPER AIR</span><time id="upperTime">Checking charts…</time><span class="data-state" id="upperState" data-state="loading">Checking</span></a>
+        <button class="refresh-data" id="refreshData" type="button" aria-label="Refresh published chart status" title="Refresh chart status"><span aria-hidden="true">↻</span></button>
+        <p class="sr-only" id="dataStatus" role="status" aria-live="polite">Checking published chart metadata.</p>
+        <noscript><p class="no-script">Enable JavaScript to check publication times. All workspace links work without it.</p></noscript>
+      </section>
+      <section class="workspace-section" id="workspaces" aria-labelledby="workspacesTitle">
+        <div class="section-heading"><div><p class="eyebrow">YOUR WORKBENCH</p><h2 id="workspacesTitle">Start with the question.</h2></div><p>Five focused workspaces.<br />One connected weather picture.</p></div>
+        <div class="workspace-filters" role="group" aria-label="Filter workspaces"><button type="button" data-filter="all" aria-pressed="true">All workspaces <span>05</span></button><button type="button" data-filter="airport" aria-pressed="false">Airport planning</button><button type="button" data-filter="hazard" aria-pressed="false">Hazard monitoring</button><button type="button" data-filter="analysis" aria-pressed="false">Synoptic analysis</button><span class="sr-only" id="filterResult" role="status" aria-live="polite"></span></div>
+        <nav class="workspace-grid" aria-label="Weather workspaces" id="workspaceGrid">
+          <a class="workspace-card card-featured" href="wafs.html" data-category="analysis"><div class="card-top"><span class="card-number">01 / THE SYNOPTIC PICTURE</span><svg class="workspace-icon" aria-hidden="true"><use href="#icon-chart" /></svg></div><div class="card-body"><h3>Observation Charts</h3><p>Read the atmosphere, not just the forecast. Explore surface and upper-air observations, synoptic features and soundings.</p></div><div class="featured-bottom"><div class="card-tags"><span>Observed</span><span>Experimental diagnostics</span></div><span class="card-open">Open charts <svg aria-hidden="true"><use href="#icon-arrow" /></svg></span></div><div class="featured-contours" aria-hidden="true"></div></a>
+          <a class="workspace-card card-airport" href="aerodrome-forecast.html" data-category="airport"><div class="card-top"><span class="card-number">02 / AIRPORT PLANNING</span><svg class="workspace-icon" aria-hidden="true"><use href="#icon-airport" /></svg></div><div class="card-body"><h3>Aerodrome Forecast</h3><p>A closer look at airport weather, with graphical forecasts for the planning window ahead.</p></div><div class="card-bottom"><span class="card-kind">MODEL GUIDANCE</span><svg class="card-arrow" aria-hidden="true"><use href="#icon-arrow" /></svg></div></a>
+          <a class="workspace-card card-reports" href="weather-analyzer.html" data-category="airport"><div class="card-top"><span class="card-number">03 / REPORTS TO CONTEXT</span><svg class="workspace-icon" aria-hidden="true"><use href="#icon-report" /></svg></div><div class="card-body"><h3>Weather Analyzer</h3><p>Make sense of coded weather. Screen METARs and TAFs for conditions that deserve attention.</p></div><div class="card-bottom"><span class="card-kind">METAR + TAF</span><svg class="card-arrow" aria-hidden="true"><use href="#icon-arrow" /></svg></div></a>
+          <a class="workspace-card card-storm" href="storms.html" data-category="hazard"><div class="card-top"><span class="card-number">04 / STORM EXPOSURE</span><svg class="workspace-icon" aria-hidden="true"><use href="#icon-storm" /></svg></div><div class="card-body"><h3>Storm Systems</h3><p>Follow storm tracks and wind radii. See which airports lie close to the observed and forecast path.</p></div><div class="card-bottom"><span class="card-kind">TRACKS + AIRPORT IMPACTS</span><svg class="card-arrow" aria-hidden="true"><use href="#icon-arrow" /></svg></div></a>
+          <a class="workspace-card card-ash" href="ash.html" data-category="hazard"><div class="card-top"><span class="card-number">05 / VOLCANIC HAZARDS</span><svg class="workspace-icon" aria-hidden="true"><use href="#icon-ash" /></svg></div><div class="card-body"><h3>Volcanic Ash</h3><p>Explore published ash advisories, affected areas and airport proximity in one workspace.</p></div><div class="card-bottom"><span class="card-kind">ADVISORIES + SCREENING</span><svg class="card-arrow" aria-hidden="true"><use href="#icon-arrow" /></svg></div></a>
+        </nav>
+        <p class="operational-note"><span aria-hidden="true">⊕</span> A workbench for context, not a substitute for official products, operational procedures or professional judgement.</p>
+      </section>
+      <section class="about-section" id="about" aria-labelledby="aboutTitle"><div><p class="eyebrow">INDEPENDENT. ALWAYS EVOLVING.</p><h2 id="aboutTitle">Built with curiosity.<br /><em>Grounded in meteorology.</em></h2></div><div class="about-copy"><p>A personal project by meteorologist <strong>Amlan Chatterjee</strong> and his wife, data engineer <strong>Swarnali Chakraborty</strong>. A shared effort to bring better context to aviation weather.</p><a href="mailto:amlanstudy@gmail.com">Feedback, ideas or a conversation <span aria-hidden="true">↗</span></a><details class="developer-note"><summary>Developer’s note &amp; limitations <span aria-hidden="true">+</span></summary><p>As the application gradually reaches more users, we remain committed to improving it through better technology and community feedback. However, no tool can replace the knowledge, experience and judgement of pilots, dispatchers and meteorologists.</p><p>This application uses publicly available weather and aviation data and is intended only as supplementary guidance. It must not replace official products, operational procedures or professional judgement. The developers accept no liability for any consequences arising from its use.</p><p>Feedback and collaboration are welcome at <a href="mailto:amlanstudy@gmail.com">amlanstudy@gmail.com</a>.</p></details></div></section>
     </main>
-  </body>
+    <footer class="site-footer"><span>WEATHER MACHINE <span class="footer-divider">/</span> TAKE-OFF DATA MACHINE</span><a href="#top">Back to the overview <span aria-hidden="true">↑</span></a></footer>
+  </div>
+</body>
 </html>

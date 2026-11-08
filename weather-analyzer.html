@@ -18,23 +18,25 @@
     <style>
       .category-filter.concern,.taf-table .concern,.metar-hazard.concern{color:#F6C344}.category-filter.bad,.taf-table .bad,.metar-hazard.bad{color:#FF8A3D}.category-filter.severe,.taf-table .severe,.metar-hazard.severe{color:#FF3B5C}.category-filter.active.concern{background:#F6C344;color:#17211f;border-color:#F6C344}.category-filter.active.bad{background:#FF8A3D;color:#17211f;border-color:#FF8A3D}.category-filter.active.severe{background:#FF3B5C;color:#fff;border-color:#FF3B5C}.taf-table tr.risk-row.concern{box-shadow:inset 4px 0 #F6C344}.taf-table tr.risk-row.bad{box-shadow:inset 4px 0 #FF8A3D}.taf-table tr.risk-row.severe{box-shadow:inset 4px 0 #FF3B5C}.rule-card.concern{border-top-color:#F6C344}.rule-card.bad{border-top-color:#FF8A3D}.rule-card.severe{border-top-color:#FF3B5C}
     </style>
+    <link rel="stylesheet" href="workbench.css?v=20261109b" />
   </head>
-  <body>
+  <body class="workbench-page page-analyzer">
     <main class="analyzer-shell">
-      <header class="analyzer-header">
+<a class="desk-skip" href="#workspaceMain">Skip to workspace</a><header class="desk-masthead"><a class="desk-brand" href="index.html" aria-label="Weather machine home"><span aria-hidden="true">◎</span> Weather <em>machine<i>.</i></em></a><nav aria-label="Application sections"><a href="aerodrome-forecast.html">Aerodrome</a><a href="storms.html">Storms</a><a href="ash.html">Volcanic ash</a><a href="weather-analyzer.html" aria-current="page">Analyzer</a><a href="wafs.html">Observation charts</a></nav></header>
+      <header class="analyzer-header desk-page-header">
         <div>
-          <div class="eyebrow"><span></span> AVIATION WEATHER DECODING</div>
-          <nav class="app-nav" aria-label="Application sections"><a href="index.html">Home</a><a href="aerodrome-forecast.html">Aerodrome Forecast</a><a href="storms.html">Storm systems</a><a href="ash.html">Volcanic Ash Advisories</a><a class="active" href="weather-analyzer.html">Weather Analyzer</a><a href="wafs.html">Observation Charts</a></nav>
-          <h1>Weather<br /><em>Analyzer</em></h1>
+          <div class="eyebrow">REPORT DECODING <span class="desk-number">/ 03</span></div>
+          
+          <h1>Decode the <em>conditions.</em></h1>
         </div>
         <p class="analyzer-source"><b>TAF and METAR decision support</b><br />Paste one or more raw reports to identify weather concerns using conservative aviation-planning rules. Always verify the original official report.</p>
       </header>
 
-      <section class="analyzer-input" aria-labelledby="inputTitle">
+      <section id="workspaceMain" tabindex="-1" class="analyzer-input" aria-labelledby="inputTitle">
         <span class="section-label">RAW AVIATION WEATHER</span>
         <h2 id="inputTitle">Paste METAR or TAF text</h2>
         <p>Paste reports from one or more stations. Press <b>Enter</b> to analyse; use <b>Shift + Enter</b> for a new line.</p>
-        <textarea id="weatherInput" spellcheck="false" aria-label="Paste METAR or TAF reports" placeholder="METAR VABB 291100Z 27012G25KT 2000 -RA BR BKN006 26/24 Q1008=&#10;TAF VHHH 291100Z 2912/3018 09012KT 9999 SCT020 TEMPO 2914/2918 1500 TSRA BKN008CB="></textarea>
+        <label class="desk-input-label" for="weatherInput">REPORT TEXT</label><textarea id="weatherInput" spellcheck="false" aria-label="Paste METAR or TAF reports" placeholder="METAR VABB 291100Z 27012G25KT 2000 -RA BR BKN006 26/24 Q1008=&#10;TAF VHHH 291100Z 2912/3018 09012KT 9999 SCT020 TEMPO 2914/2918 1500 TSRA BKN008CB="></textarea>
         <div class="analyzer-actions"><small>TAF results show only stations with identified risk windows. METAR results retain every report and highlight relevant groups in red.</small><span class="analyzer-action-buttons"><a href="metar-analyzer.html" class="metar-analyzer-link">METAR Analyzer ↗</a><button id="analyseWeather" type="button">Analyse weather ↗</button></span></div>
         <p id="analyzerNotice" class="analyzer-notice" aria-live="polite">Ready for pasted reports.</p>
       </section>
@@ -54,7 +56,7 @@
         <div id="metarList"></div>
       </section>
 
-      <section class="weather-rule-reference" aria-labelledby="ruleReferenceTitle">
+      <details class="desk-drawer rule-drawer"><summary><span>Weather-category reference</span><small>Screening rules &amp; approach minima</small></summary><section class="weather-rule-reference" aria-labelledby="ruleReferenceTitle">
         <span class="section-label">SCREENING REFERENCE</span>
         <h2 id="ruleReferenceTitle">Weather-category rules</h2>
         <div class="rule-grid">
@@ -65,7 +67,9 @@
         <div class="approach-legend" aria-label="Approach minima colour legend"><span class="approach-badge cat2">CAT II conditions</span><span class="approach-badge cat3">CAT III conditions</span><span class="approach-badge below-cat3">Below CAT III minima</span><span class="approach-badge no-ils">No-ILS conditions</span></div>
       </section>
 
+      </details>
       <p class="analyzer-disclaimer">This analyzer is a decoding and screening aid. It does not replace the official TAF, METAR, SPECI, ATIS, SIGMET, NOTAM, company limitations, dispatch assessment, or pilot-in-command decision-making.</p>
+    <footer class="desk-footer"><a href="index.html">← Back to the workbench</a><span>WEATHER MACHINE / AVIATION WEATHER IN CONTEXT</span></footer>
     </main>
     <script src="weather-analyzer.js?v=20261003-updated-rules-v13"></script>
   </body>

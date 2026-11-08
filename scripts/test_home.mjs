@@ -1,0 +1,26 @@
+import {readFile} from 'node:fs/promises';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const context={Date,Intl};vm.createContext(context);
+vm.runInContext(await readFile(new URL('../home.js',import.meta.url),'utf8'),context);
+const api=context.HomePage,now=new Date('2026-11-09T03:45:00Z');
+assert.equal(api.expectedCycle(now,3).toISOString(),'2026-11-09T03:00:00.000Z');
+assert.equal(api.expectedCycle(new Date('2026-11-09T00:15:00Z'),3).toISOString(),'2026-11-08T21:00:00.000Z');
+assert.equal(api.expectedCycle(new Date('2026-11-09T12:15:00Z'),12).toISOString(),'2026-11-09T00:00:00.000Z');
+const entry={valid_time:'2026-11-09T03:00:00Z',feed_errors:[]};
+assert.equal(api.publication([entry],'surface',now).state,'current');
+assert.equal(api.publication([{...entry,feed_errors:['one missing feed']}],'surface',now).state,'partial');
+assert.equal(api.publication([{valid_time:'2026-11-08T21:00:00Z'}],'surface',now).state,'delayed');
+assert.equal(api.publication([{valid_time:'2026-11-09T00:00:00Z'}],'upper',now).state,'current');
+for(const invalid of [undefined,[],[{valid_time:'bad'}],[{valid_time:'2027-01-01T00:00:00Z'}]])assert.equal(api.publication(invalid,'surface',now).state,'unavailable');
+assert.equal(api.publication([{valid_time:'2026-11-09T00:00:00Z'},entry],'surface',now).entry,entry);
+assert.ok(api.formatTime(now).includes('03:45Z'));
+const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
+for(const path of ['wafs.html','aerodrome-forecast.html','weather-analyzer.html','storms.html','ash.html']){assert.ok(html.includes('href="'+path+'"'));await readFile(new URL('../'+path,import.meta.url));}
+assert.equal((html.match(/data-category=/g)||[]).length,5);
+assert.ok(html.includes('Not live weather data'));
+assert.ok(html.includes('Swarnali Chakraborty'));
+assert.ok(html.includes('The developers accept no liability'));
+assert.ok(!html.includes('app.js'));
+assert.ok(!html.includes('home-star-field.jpg'));
+console.log('Homepage cycle boundaries, current/partial/delayed/unavailable states, links and retained credits passed.');

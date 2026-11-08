@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Weather machine</title>
+    <title>Aerodrome Forecast · Weather machine</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
@@ -31,16 +31,19 @@
       @media(max-width:760px){.controls{padding:16px}.results{padding:16px}.detail{padding:0 12px}.summary div{padding:14px 10px}.briefing-grid{grid-template-columns:1fr}.briefing{padding:20px 16px}.calculator-controls{align-items:stretch}.calculator-controls label,.calculator-controls input,.calculator-controls select{width:100%}}
     </style>
     <link rel="stylesheet" href="dark-theme.css?v=20260926" />
+    <link rel="stylesheet" href="workbench.css?v=20261109b" />
   </head>
-  <body>
+  <body class="workbench-page page-forecast">
     <main class="shell">
-      <header>
-        <div class="eyebrow"><span></span> FLIGHT WEATHER WORKBENCH</div>
-        <nav class="app-nav" aria-label="Application sections"><a href="index.html">Home</a><a class="active" href="aerodrome-forecast.html">Aerodrome Forecast</a><a href="storms.html">Storm systems</a><a href="ash.html">Volcanic Ash Advisories</a><a href="weather-analyzer.html">Weather Analyzer</a><a href="wafs.html">Observation Charts</a></nav>
-        <h1>Aerodrome<br /><em>Forecast</em></h1>
+<a class="desk-skip" href="#workspaceMain">Skip to workspace</a><header class="desk-masthead"><a class="desk-brand" href="index.html" aria-label="Weather machine home"><span aria-hidden="true">◎</span> Weather <em>machine<i>.</i></em></a><nav aria-label="Application sections"><a href="aerodrome-forecast.html" aria-current="page">Aerodrome</a><a href="storms.html">Storms</a><a href="ash.html">Volcanic ash</a><a href="weather-analyzer.html">Analyzer</a><a href="wafs.html">Observation charts</a></nav></header>
+      <header class="desk-page-header forecast-header">
+        <div class="eyebrow">AIRPORT PLANNING <span class="desk-number">/ 02</span></div>
+        
+        <h1>Plan the <em>departure.</em></h1>
         <p class="intro">Bias-corrected multi-model weather guidance, prepared around your departure window.</p>
       </header>
 
+      <div id="workspaceMain" class="desk-section-heading" tabindex="-1"><div><span class="section-label">01 / FORECAST REQUEST</span><h2>Your airport. Your window.</h2></div><span class="desk-context">ALL TIMES IN UTC</span></div>
       <section class="controls" aria-label="Forecast request">
         <label>Airport ICAO or IATA<input id="icao" maxlength="4" value="KJFK" autocomplete="off" spellcheck="false" /></label>
         <label>Take-off window starts (UTC)<input id="start" type="datetime-local" /></label>
@@ -50,7 +53,7 @@
 
       <section id="notice" class="notice">Enter a four-letter ICAO or three-letter IATA code and a UTC window. The previous 72 hours of METAR are used to estimate each model’s bias.</section>
 
-      <section id="bulkRisk" class="bulk-risk" aria-label="Flight-list weather risk check">
+      <details class="desk-drawer flight-list-drawer"><summary><span>Flight-list screening</span><small>Review several airports from a schedule file</small></summary><section id="bulkRisk" class="bulk-risk" aria-label="Flight-list weather risk check">
         <div class="section-heading"><div><span class="section-label">FLIGHT LIST CHECK</span><h2>Station weather-risk review <small>UTC</small></h2></div></div>
         <p>Upload an Excel, CSV or text file with <strong>Flight No, Departure, Arrival, Dept Time, Arriv Time</strong>. Departure and Arrival use IATA codes. Time values use <strong>HHMM/DD</strong>, for example <strong>1836/16</strong>. The review adds a plain-text destination weather-risk assessment from AWC TAF and the model ensemble forecast.</p>
         <div class="bulk-controls"><label>Flight list<input id="flightFile" type="file" accept=".xlsx,.xls,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" /></label><label>Schedule month (UTC)<input id="scheduleMonth" type="month" /></label><button id="analyseFlightList" type="button">Analyse flight list</button></div>
@@ -58,6 +61,7 @@
         <div id="bulkResults" class="bulk-results hidden"><div class="bulk-downloads"><button id="downloadBulkCsv" class="text-button" type="button">Download CSV ↓</button><button id="downloadBulkXlsx" class="text-button" type="button">Download Excel ↓</button></div><div class="table-wrap"><table><thead id="bulkHead"></thead><tbody id="bulkBody"></tbody></table></div></div>
       </section>
 
+      </details>
       <section id="summary" class="summary hidden">
         <div><small>AIRPORT</small><strong id="airportName">—</strong></div>
         <div><small>BIAS WINDOW</small><strong>Previous 72 hours</strong></div>
@@ -143,14 +147,16 @@
         </div>
       </section>
 
-      <section id="methodSection" class="method">
+      <details class="desk-drawer method-drawer"><summary><span>How the forecast is prepared</span><small>Models, bias correction &amp; verification</small></summary><section id="methodSection" class="method">
         <div><span class="section-label">METHOD</span><h2>What is being corrected?</h2></div>
           <p>Each available Open-Meteo model is compared with the closest AWC METAR observation. Recent observations receive more influence, outlying errors are constrained, and each continuous parameter is weighted by recent local skill. Bias corrections are strongest near the latest METAR and decay with forecast lead time, avoiding an over-correction far into the future. Skill weights also adapt cautiously to rainy/dry, day/night and light-wind/breezy regimes, while shrinking back toward all-weather skill when recent METAR matches are few. Wind is bias-corrected as east–west and north–south vector components before being converted back to aviation wind direction and speed; light-wind directions receive less influence because they are inherently variable. Rain/precipitation, thunderstorm, and fog/low-visibility signals are separately verified against the previous 72 hours of raw METAR and blended as skill-weighted event likelihoods. METAR variable winds are filled from the last actual direction or circularly interpolated between surrounding actual reports. Precipitation amount remains uncorrected because METAR does not supply a comparable amount.</p>
       </section>
 
+      </details>
+    <footer class="desk-footer"><a href="index.html">← Back to the workbench</a><span>WEATHER MACHINE / AVIATION WEATHER IN CONTEXT</span></footer>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260929-light-graphs-v2"></script>
+    <script src="app.js?v=20261109workspace"></script>
     <script src="bulk-risk.js?v=20260917"></script>
   </body>
 </html>

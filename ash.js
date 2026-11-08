@@ -130,6 +130,10 @@ async function load() {
     ash('ashNotice').textContent = state.advisories.length ? 'Official VAAC advisories loaded from the BoM global feed. The source is cached to reduce requests.' : 'The official global feed currently reports no active VAAs.';
   } catch (error) {
     ash('ashNotice').textContent = `Official VAAC feed unavailable: ${error.message}`;
+    if (!state.advisories.length) {
+      ash('ashCount').textContent = 'Unavailable';
+      ash('ashCards').innerHTML = '<p class="ash-empty">Advisory data could not be loaded. Use “Refresh official advisories” to try again, or open an originating VAAC from the directory below. This does not indicate an absence of volcanic ash.</p>';
+    }
   } finally {
     ash('refreshAsh').disabled = false;
   }

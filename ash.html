@@ -18,18 +18,20 @@
       .ash-control-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.ash-bot-link{display:flex;align-items:center;gap:9px;min-height:40px;padding:7px 10px;border:1px solid #5d7e92;background:#e5f0f5;color:#17372e;text-decoration:none;font:600 12px 'DM Sans',sans-serif}.ash-bot-link:hover{background:#d5e7f0;border-color:#31584c}.ash-bot-icon{display:grid;place-items:center;width:25px;height:25px;border-radius:50%;background:#31584c;color:#fff;font-size:13px}.ash-bot-copy{display:flex;flex-direction:column;gap:1px;line-height:1.15}.ash-bot-copy small{font:400 10px 'DM Mono',monospace;color:#496878}.ash-bot-arrow{margin-left:3px;font-size:15px}@media(max-width:760px){.ash-control-actions{justify-content:flex-start;margin-top:14px}.ash-controls .ash-control-actions button{margin-top:0}.ash-bot-link{flex:1;justify-content:flex-start}}
     </style>
     <link rel="stylesheet" href="dark-theme.css?v=20260926" />
+    <link rel="stylesheet" href="workbench.css?v=20261109b" />
   </head>
-  <body>
+  <body class="workbench-page page-ash">
     <main class="ash-shell">
-      <header class="ash-header">
+<a class="desk-skip" href="#workspaceMain">Skip to workspace</a><header class="desk-masthead"><a class="desk-brand" href="index.html" aria-label="Weather machine home"><span aria-hidden="true">◎</span> Weather <em>machine<i>.</i></em></a><nav aria-label="Application sections"><a href="aerodrome-forecast.html">Aerodrome</a><a href="storms.html">Storms</a><a href="ash.html" aria-current="page">Volcanic ash</a><a href="weather-analyzer.html">Analyzer</a><a href="wafs.html">Observation charts</a></nav></header>
+      <header class="ash-header desk-page-header">
         <div>
-          <div class="eyebrow"><span></span> OFFICIAL AVIATION HAZARD INFORMATION</div>
-          <nav class="app-nav" aria-label="Application sections"><a href="index.html">Home</a><a href="aerodrome-forecast.html">Aerodrome Forecast</a><a href="storms.html">Storm systems</a><a class="active" href="ash.html">Volcanic Ash Advisories</a><a href="weather-analyzer.html">Weather Analyzer</a><a href="wafs.html">Observation Charts</a></nav>
-          <h1>Volcanic Ash<br /><em>Advisories</em></h1>
+          <div class="eyebrow">VOLCANIC ASH <span class="desk-number">/ 05</span></div>
+          
+          <h1>Track the <em>ash.</em></h1>
         </div>
         <p class="ash-source"><b>Official VAAC products only</b><br />A Volcanic Ash Advisory is an aviation-safety product issued by a Volcanic Ash Advisory Centre. Weather Machine will display the agency data without creating an independent ash forecast.</p>
       </header>
-      <section class="ash-controls">
+      <section id="workspaceMain" tabindex="-1" class="ash-controls">
         <p>Review current volcanic-ash information globally. The selected advisory will show official plume location, flight levels, movement and forecast positions, alongside an airport-proximity screen.</p>
         <div class="ash-control-actions">
           <a class="ash-bot-link" href="https://t.me/wm_vol_ash_bot" target="_blank" rel="noopener noreferrer" aria-label="Open the Volcanic Ash Alerts Global Telegram bot">
@@ -55,7 +57,7 @@
           <section class="ash-panel"><h3>Live-feed connection</h3><p>This page uses the public Australian Bureau of Meteorology all-VAAC feed. It republishes official VAA text received from the nine VAACs, allowing independent use without an account. WIFS remains an optional future source for direct structured data and graphics.</p></section>
         </div>
       </section>
-      <section class="ash-resources" aria-labelledby="ashResourcesTitle">
+      <details class="desk-drawer source-drawer"><summary><span>VAAC directory</span><small>Nine centres. Original agency products.</small></summary><section class="ash-resources" aria-labelledby="ashResourcesTitle">
         <span class="section-label">DATA RESOURCES</span><h2 id="ashResourcesTitle">Volcanic Ash Advisory Centres</h2>
         <p>The nine ICAO-designated VAACs are responsible for monitoring and forecasting ash dispersion within their areas of responsibility. Weather Machine will identify the responsible VAAC on every advisory and link through to the originating agency wherever it provides a public product page.</p>
         <div class="vaac-grid">
@@ -70,8 +72,10 @@
           <a href="https://www.canada.ca/en/environment-climate-change/services/volcanic-ash-advisory.html" target="_blank" rel="noopener noreferrer"><strong>Montréal VAAC</strong><small>Environment and Climate Change Canada</small></a>
         </div>
       </section>
+      </details>
+    <footer class="desk-footer"><a href="index.html">← Back to the workbench</a><span>WEATHER MACHINE / AVIATION WEATHER IN CONTEXT</span></footer>
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="ash.js?v=20260929"></script>
+    <script src="ash.js?v=20261109workspace"></script>
   </body>
 </html>

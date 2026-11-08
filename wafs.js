@@ -2,6 +2,8 @@
   const $ = (id) => document.getElementById(id);
   const map = L.map('observationMap', { worldCopyJump: true, minZoom: 2, preferCanvas: true, zoomControl: false }).setView([20, 30], 2);
   L.control.zoom({ position: 'topright' }).addTo(map);
+  // Sidebar visibility and responsive workspace sizing change the map container.
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => map.invalidateSize({pan:false})).observe($('observationMap'));
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 10, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
   map.createPane('temperatureShading'); map.getPane('temperatureShading').style.zIndex = 350;
   map.createPane('diagnosticAreas'); map.getPane('diagnosticAreas').style.zIndex = 375;
@@ -349,3 +351,4 @@
   $('chartLevel').parentElement.parentElement.style.gridTemplateColumns = '1fr';
   guide(); loadManifest(); setInterval(loadManifest, 300000);
 })();
+
