@@ -18,7 +18,12 @@ assert.ok(api.formatTime(now).includes('03:45Z'));
 const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
 for(const path of ['wafs.html','aerodrome-forecast.html','weather-analyzer.html','storms.html','ash.html']){assert.ok(html.includes('href="'+path+'"'));await readFile(new URL('../'+path,import.meta.url));}
 assert.equal((html.match(/data-category=/g)||[]).length,5);
-assert.ok(html.includes('Not live weather data'));
+assert.ok(html.includes('Model guidance'));
+assert.ok(!html.includes('A clearer view.'));
+assert.ok(!html.includes('A better briefing.'));
+assert.ok(!html.includes('<details class="developer-note"'));
+assert.ok(html.includes('Developer’s note &amp; limitations'));
+assert.ok(html.includes('site-theme.js'));
 assert.ok(html.includes('Swarnali Chakraborty'));
 assert.ok(html.includes('The developers accept no liability'));
 assert.ok(!html.includes('app.js'));

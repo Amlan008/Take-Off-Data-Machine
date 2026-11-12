@@ -1,0 +1,46 @@
+:root{--site-bg:#0b1b22;--site-panel:#10262d;--site-input:#172f36;--site-text:#e8eddf;--site-muted:#a4b6b9;--site-line:#365057;--site-accent:#b5d6b5;--site-on-accent:#16312b;--site-feature:#e2e5d8;--site-feature-text:#17372d}
+:root[data-theme=daylight]{--site-bg:#f7faf8;--site-panel:#fff;--site-input:#eef4f0;--site-text:#18342f;--site-muted:#516b64;--site-line:#c0d0c7;--site-accent:#245e4b;--site-on-accent:#fff;--site-feature:#dce9da;--site-feature-text:#183c30}
+:root[data-theme=mist]{--site-bg:#e9eff2;--site-panel:#f9fbfc;--site-input:#e2ebef;--site-text:#203b4b;--site-muted:#4d6877;--site-line:#b9cbd4;--site-accent:#315e79;--site-on-accent:#fff;--site-feature:#d5e5e9;--site-feature-text:#203c49}
+:root[data-theme=forest]{--site-bg:#101f19;--site-panel:#183127;--site-input:#213d32;--site-text:#eeeee0;--site-muted:#b1c1b2;--site-line:#405e4b;--site-accent:#c2d4a5;--site-on-accent:#203821;--site-feature:#e1e5cf;--site-feature-text:#2a4225}
+:root[data-theme=sandstone]{--site-bg:#f2ebdf;--site-panel:#fcf8ef;--site-input:#eae1d2;--site-text:#463d31;--site-muted:#736350;--site-line:#ccbfa9;--site-accent:#74532e;--site-on-accent:#fff8ef;--site-feature:#e9dbc2;--site-feature-text:#4f3c26}
+:root[data-theme]{background:var(--site-bg)}
+:root[data-theme] body{--bg:var(--site-bg);--panel:var(--site-panel);--paper:var(--site-bg);--ink:var(--site-text);--muted:var(--site-muted);--line:var(--site-line);--sage:var(--site-accent);--lime:var(--site-accent);--forest:var(--site-accent);--desk-bg:var(--site-bg);--desk-panel:var(--site-panel);--desk-line:var(--site-line);--desk-text:var(--site-text);--desk-muted:var(--site-muted);--desk-accent:var(--site-accent);background:var(--site-bg)!important;color:var(--site-text)}
+.theme-choice{display:flex!important;align-items:center;gap:8px;font:10px 'DM Mono',monospace;color:var(--site-muted);white-space:nowrap;margin:0!important;letter-spacing:0!important}.theme-choice select{min-width:100px;width:auto!important;max-width:135px;border:1px solid var(--site-line)!important;border-radius:3px;padding:7px 24px 7px 9px!important;min-height:34px;font:11px 'DM Sans',sans-serif!important;background:var(--site-panel)!important;color:var(--site-text)!important;margin:0!important;cursor:pointer}.theme-choice option{background:var(--site-panel);color:var(--site-text)}.theme-choice select:focus-visible{outline:2px solid var(--site-accent);outline-offset:3px}
+:root[data-theme] :is(.wordmark,.desk-brand,.workspace-brand),:root[data-theme] :is(.top-nav,.desk-masthead nav,.workspace-masthead nav) a{color:var(--site-text)!important}
+:root[data-theme] :is(.wordmark,.desk-brand,.workspace-brand) em{color:var(--site-accent)!important}
+:root:is([data-theme=daylight],[data-theme=mist],[data-theme=sandstone]) :is(input,select,textarea){color-scheme:light}
+:root[data-theme] :is(.desk-masthead,.workspace-masthead){flex-wrap:wrap;gap:12px 22px;padding-block:15px}
+:root[data-theme] :is(.workspace-card,.analyzer-input,.metar-report,.controls,.briefing,.results,.detail,.bulk-risk,.storm-card,.ash-card,.storm-operational,.cyclone-lookup,.ash-panel,.resource-card,.vaac-grid a){background:var(--site-panel)!important;border-color:var(--site-line)!important}
+:root[data-theme] .workspace-card:not(.card-featured) :is(h3,p,.card-kind,.card-number){color:var(--site-text)}
+:root[data-theme] .workspace-card:not(.card-featured) :is(p,.card-kind,.card-number){color:var(--site-muted)}
+:root[data-theme] .card-featured{background:var(--site-feature)!important;color:var(--site-feature-text);border-color:var(--site-feature)!important}.card-featured .featured-contours{display:none}
+:root[data-theme] :is(.controls,.calculator-controls,.bulk-controls,.forecast-source-controls,.analyzer-input,.cyclone-lookup,.storm-spatial-controls) :is(input,select,textarea){background:var(--site-input)!important;color:var(--site-text)!important;border-color:var(--site-line)!important}
+:root[data-theme] :is(.forecast-source-controls,.calculator-controls,.bulk-controls) label{color:var(--site-muted)}
+:root[data-theme] :is(.analyzer-actions button,.controls button,.calculator-controls button,.bulk-controls button,.storm-controls button,.ash-controls button,.copy-table){background:var(--site-accent)!important;color:var(--site-on-accent)!important}
+:root[data-theme] :is(.notice,.storm-controls,.ash-controls,.storm-summary,.ash-summary,.storm-empty,.ash-empty,.flight-list-drawer){background:var(--site-panel)!important;color:var(--site-text)!important;border-color:var(--site-line)!important}
+:root[data-theme] :is(.card-body p,.about-copy>p,.about-copy strong,.site-footer,.desk-footer,.workspace-footer,.analyzer-notice,.analyzer-disclaimer,.storm-notice,.ash-notice,.strip-subtitle,.operational-note,.workspace-cadence strong){color:var(--site-muted)}
+:root[data-theme] :is(.desk-footer a,.workspace-footer a,.about-copy a,.site-footer a){color:var(--site-accent)}
+:root[data-theme] .table-wrap{background:var(--site-panel)!important}:root[data-theme] th{background:var(--site-input)!important;color:var(--site-text)!important}:root[data-theme] td{border-color:var(--site-line)!important}
+:root[data-theme] :is(.chart-controls,.workspace-toolbar,.chart-timeline){background:var(--site-panel)!important;color:var(--site-text);border-color:var(--site-line)!important}
+:root[data-theme] :is(.chart-controls select,.chart-timeline select,#chartReview textarea,#chartReview input:not([type=checkbox])){background:var(--site-input)!important;color:var(--site-text)!important;border-color:var(--site-line)!important}
+:root[data-theme] :is(.chart-controls label,.sidebar-heading,.chart-status,.region-key){color:var(--site-muted)}:root[data-theme] .chart-status.error{color:#e7a286}
+:root[data-theme] .chart-controls details>summary,:root[data-theme] .workspace-actions button,:root[data-theme] .chart-buttons button{color:var(--site-text)}
+:root[data-theme] :is(.data-update time,.strip-heading .eyebrow){color:var(--site-text)}:root[data-theme] .data-update .data-label{color:var(--site-muted)}
+:root[data-theme] .data-state[data-state=delayed],:root[data-theme] .data-state[data-state=partial]{background:#614a25;color:#ffe1a4;border-color:#8c7448}:root[data-theme] .data-state[data-state=current]{background:#254b3a;color:#d4edcf}:root[data-theme] .data-state[data-state=unavailable]{background:#5a3c3c;color:#f7d5cb}
+/* A fixed white analytical canvas, independent of the surrounding theme. */
+:root[data-theme] .forecast-graphic-panel .chart-wrap,:root[data-theme] .forecast-graphic-panel .meteogram-wrap,:root[data-theme] .forecast-graphic-panel canvas{background:#fff!important;border-color:#d8dfe1!important}
+@media(max-width:900px){.theme-choice>span{display:none}.theme-choice select{min-width:94px;max-width:110px}.masthead{gap:12px;flex-wrap:wrap;padding:14px 0}.masthead .top-nav{margin-left:auto}.masthead .utc-clock{display:none}}
+@media(max-width:480px){.masthead .top-nav{gap:12px}.masthead .wordmark{font-size:17px}.masthead .theme-choice{margin-left:auto!important}.theme-choice select{min-height:38px}.desk-masthead .theme-choice,.workspace-masthead .theme-choice{margin-left:auto!important}}
+/* Legacy detail panels follow the selected surface; scientific map marks do not. */
+:root[data-theme] :is(.briefing-grid>div,.taf-block,.confidence-cell,.confidence-lead-detail,.model-chip-list span,.rule-card,.no-findings,.taf-table-wrap,.official-track,.graphic-unavailable,.official-text pre,.storm-advisory,.cyclone-impact-timeline,.ash-bot-link,.ash-graphic-key,.leaflet-popup-content-wrapper,.leaflet-popup-tip,.leaflet-control-zoom,.leaflet-control-zoom a,.storm-map-legend){background:var(--site-panel)!important;color:var(--site-text)!important;border-color:var(--site-line)!important}
+:root[data-theme] :is(.ash-bot-copy small,.storm-card small){color:var(--site-muted)!important}
+:root[data-theme] :is(.storm-links a,.official-track a,.leaflet-control-attribution a){color:var(--site-accent)!important}
+:root[data-theme] .leaflet-control-attribution{background:var(--site-panel)!important;color:var(--site-muted)!important}
+:root[data-theme] tbody tr:hover{background:var(--site-input)!important}
+:root:is([data-theme=daylight],[data-theme=mist],[data-theme=sandstone]) :is(.taf-table .concern,.metar-hazard.concern,.metar-level.concern){color:#805e12!important}
+:root:is([data-theme=daylight],[data-theme=mist],[data-theme=sandstone]) :is(.taf-table .bad,.metar-hazard.bad,.metar-level.bad){color:#ad420c!important}
+:root:is([data-theme=daylight],[data-theme=mist],[data-theme=sandstone]) :is(.taf-table .severe,.metar-hazard.severe,.metar-level.severe){color:#9e2439!important}
+/* Keep the featured workspace readable against its intentionally lighter surface. */
+:root[data-theme] .workspace-grid .workspace-card.card-featured{background:var(--site-feature)!important;color:var(--site-feature-text)!important;border-color:var(--site-feature)!important}
+:root[data-theme] .workspace-card.card-featured :is(h3,p,.card-number,.card-kind,.card-open,.card-tags span){color:var(--site-feature-text)!important}
+:root[data-theme] .workspace-card.card-featured .workspace-icon{stroke:var(--site-feature-text)}

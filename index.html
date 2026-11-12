@@ -5,12 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#0b1b22" />
   <meta name="description" content="An independent aviation weather workbench. Explore airport forecasts, storm impacts, volcanic ash, weather reports and observation-based surface and upper-air charts." />
-  <title>Weather machine · A clearer view</title>
+  <title>Weather machine · Your weather journal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="home.css?v=20261109polish" />
   <script src="home.js?v=20261109a" defer></script>
+  <link rel="stylesheet" href="weather-journal.css?v=20261113hourly" />
+  <script src="weather-journal.js?v=20261113hourly" defer></script>
+  <link rel="stylesheet" href="site-themes.css?v=20261113a" />
+  <script src="site-theme.js?v=20261113a"></script>
 </head>
 <body class="home" id="top">
   <a class="skip-link" href="#workspaces">Skip to workspaces</a>
@@ -29,35 +33,12 @@
       <div class="utc-clock"><span class="clock-cross" aria-hidden="true">+</span><time id="utcClock">Times shown in UTC</time></div>
     </header>
     <main>
-      <section class="hero" aria-labelledby="heroTitle">
-        <div class="hero-copy">
-          <p class="eyebrow"><span></span> THE AVIATION WEATHER WORKBENCH</p>
-          <h1 id="heroTitle">A clearer view.<br /><em>A better briefing.</em></h1>
-          <p class="hero-description">From atmospheric detail to operational context.</p>
-          <p class="hero-detail">Observations, forecasts and weather hazards, brought together for the people who plan the flight.</p>
-          <div class="hero-actions"><a class="button-primary" href="#workspaces">Explore workspaces <svg aria-hidden="true"><use href="#icon-arrow" /></svg></a><a class="button-text" href="wafs.html">Go to observation charts <span aria-hidden="true">↗</span></a></div>
-          <div class="hero-footnote"><span class="small-cross" aria-hidden="true">✦</span> Independent by design. Informed by observations.</div>
-        </div>
-        <div class="atmosphere" role="img" aria-label="Decorative synoptic chart illustration. Not live weather data.">
-          <div class="chart-caption"><span>THE BIGGER PICTURE</span><span aria-hidden="true">↗</span></div>
-          <svg class="synoptic-art" viewBox="0 0 540 400" preserveAspectRatio="xMidYMid slice" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <defs><radialGradient id="chartGlow"><stop stop-color="#32545b" stop-opacity=".4"/><stop offset="1" stop-color="#10242c" stop-opacity="0"/></radialGradient><clipPath id="chartClip"><rect width="540" height="400" rx="8"/></clipPath></defs>
-            <g clip-path="url(#chartClip)">
-              <ellipse cx="260" cy="206" rx="270" ry="210" fill="url(#chartGlow)" />
-              <g stroke="#6b939b" stroke-opacity=".15" stroke-width=".8"><path d="M0 70h540M0 135h540M0 200h540M0 265h540M0 330h540M65 0v400M147 0v400M229 0v400M311 0v400M393 0v400M475 0v400"/><circle cx="276" cy="200" r="170"/><circle cx="276" cy="200" r="112"/></g>
-              <g fill="#264047" fill-opacity=".65" stroke="#5b7c80" stroke-opacity=".5" stroke-width="1"><path d="m109-8 20 39 41 20 22 31-8 31 26 27-5 37 24 32 9 39 25 12 9-33 16-22 5-40 35-20 20-38 26 5 18-25 36-4 20-43 52-18V-8Z"/><path d="m42 135 25 14 16 38 21 8 14 32-6 42-27 50-18-15-5-48-26-31-7-41Z"/><path d="m359 254 26 6 17-12 16 17 35 8 8 13-23 8-17-12-26 2-14-10-23-3Z"/><path d="m409 332 30-22 29 5 18 25-4 31-41 8-31-21Z"/><path d="m263 290 8 12-3 22-12-4-4-15Z"/></g>
-              <g stroke="#8caeb2" stroke-width="1.1" stroke-opacity=".55"><path d="M-30 101C54 57 97 56 128 101s-5 98 46 139 102-7 138 17 41 89 135 72 99-71 137-52"/><path d="M-24 123C46 83 89 76 112 115s-8 100 49 142 107-5 140 14 46 91 145 77 93-66 142-53"/><path d="M-30 146C35 110 74 100 94 133s-9 96 51 140 109 2 143 17 50 88 151 78 92-68 151-50"/><path d="M-25 169c53-28 89-45 104-17s-6 94 54 137 113 6 145 21 54 89 154 77"/><path d="M-20 194c43-23 71-38 85-14s-2 83 53 125 122 17 148 23"/></g>
-              <g stroke="#97c8b6" stroke-width="1.25" stroke-opacity=".8"><path d="M319 85c-38-35-111-37-147 1s-28 102 22 121 107-10 115-49-16-71-46-76-56 12-56 35 25 39 46 27"/><path d="M337 72C290 21 202 20 157 71s-29 124 29 150 126-3 147-49 0-91-37-105"/><path d="M353 56C295-9 186-5 140 53S101 197 168 232s152 2 182-45 23-110-23-136"/></g>
-              <path d="M11 352c85-75 129-80 214-57s170 31 290-94" stroke="#c89b68" stroke-width="1.3" stroke-dasharray="7 7" opacity=".9"/>
-              <g stroke="#c89b68" stroke-width="1.3"><path d="m329 281 9-4-2 10m45-39 8-6v10m42-47 7-6 1 10"/></g>
-              <g fill="#94b9c1"><circle cx="118" cy="178" r="2.5"/><circle cx="164" cy="134" r="2.5"/><circle cx="227" cy="219" r="2.5"/><circle cx="301" cy="173" r="2.5"/><circle cx="359" cy="199" r="2.5"/><circle cx="400" cy="267" r="2.5"/><circle cx="453" cy="144" r="2.5"/></g>
-              <g stroke="#94b9c1" stroke-width="1.1"><path d="m118 178 6-26 8 6m-9-2 8 6m33-28 13-23 6 7m-8-4 6 7m46 98-4-27 9 3m-8 1 8 4m69-5 14-23 6 7m38 42 22-16 2 10m-6-7 2 9m19 72 16-23 6 7m31-130 8-26 8 5"/></g>
-              <circle cx="246" cy="120" r="23" fill="#162e35" stroke="#8cb7a5" stroke-opacity=".5"/><text x="246" y="128" fill="#b1d3be" text-anchor="middle" font-family="Georgia,serif" font-size="25">H</text>
-              <circle cx="355" cy="307" r="22" fill="#182d33" stroke="#c89b68" stroke-opacity=".5"/><text x="355" y="315" fill="#e3b38a" text-anchor="middle" font-family="Georgia,serif" font-size="25">L</text>
-            </g>
-          </svg>
-          <div class="chart-bottom"><div><span class="chart-coordinate">OBSERVE / ANALYSE / PREPARE</span><p>From the station plot<br />to the synoptic picture.</p></div><span class="chart-key"><i></i> Schematic illustration<br /><small>Not live weather data</small></span></div>
-        </div>
+      <section class="skyline" id="weatherJournal" aria-labelledby="journalTitle" data-weather="clouds">
+        <div class="journal-photo" aria-hidden="true"></div>
+        <div class="journal-top"><div><span class="journal-kicker">WEATHER JOURNAL</span><p id="journalLocation">Your corner of the world</p></div><div class="journal-top-actions"><button id="journalLocationButton" type="button">Change location <span aria-hidden="true">↗</span></button><button id="journalUnits" type="button" aria-label="Switch to Fahrenheit">°C / °F</button></div></div>
+        <div class="journal-current"><div class="journal-story"><p class="journal-kicker" id="journalPeriod">A LITTLE CLOSER TO YOUR SKY</p><h1 id="journalTitle">Your sky.<br><em>Your weather journal.</em></h1><p id="journalGuidance">Choose a location for a forecast with a little more feeling.</p><button id="journalStart" class="journal-start" type="button">Find my weather <span aria-hidden="true">↗</span></button></div><div class="journal-now" id="journalNow" hidden><div id="journalIcon" aria-hidden="true"></div><p class="journal-temperature" id="journalTemperature">—</p><p id="journalCondition"></p><p id="journalFeels"></p><p id="journalHighLow"></p><time id="journalLocalTime"></time></div></div>
+        <div class="forecast-veil"><div class="journal-facts" id="journalFacts"><span>Local weather, at your pace.</span><span>Hourly outlook · Five-day forecast</span></div><div class="journal-forecast-body" id="journalForecast" hidden><div class="journal-row-title"><h2 id="journalHourlyTitle" aria-live="polite">Next 24 hours</h2><div><span>LOCAL TIME</span><button id="journalBackNow" type="button" hidden>Back to now</button></div></div><div class="journal-hours" id="journalHours" tabindex="0" role="region" aria-labelledby="journalHourlyTitle"></div><div class="journal-days" id="journalDays" role="group" aria-label="Choose forecast day"></div></div><div class="journal-empty" id="journalEmpty"><p>Your forecast will appear here.</p><span>Search for a city, or use your approximate location.</span></div><div class="journal-footer"><span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · Model guidance <span id="journalSource"></span></span><span id="journalUpdated">Weather imagery is illustrative</span><button id="journalRefresh" type="button" hidden aria-label="Refresh local forecast">Refresh ↻</button></div><p id="journalStatus" class="journal-status" role="status" aria-live="polite">No location selected. Location access is optional.</p></div>
+        <noscript><p class="journal-noscript">Enable JavaScript to choose a location and view its forecast. The workspaces below remain available.</p></noscript>
       </section>
       <section class="observation-strip" aria-labelledby="updatesTitle">
         <div class="strip-heading"><span class="eyebrow" id="updatesTitle">OBSERVATION DESK</span><span class="strip-subtitle">Latest published chart times</span></div>
@@ -68,7 +49,7 @@
         <noscript><p class="no-script">Enable JavaScript to check publication times. All workspace links work without it.</p></noscript>
       </section>
       <section class="workspace-section" id="workspaces" aria-labelledby="workspacesTitle">
-        <div class="section-heading"><div><p class="eyebrow">YOUR WORKBENCH</p><h2 id="workspacesTitle">Start with the question.</h2></div><p>Five focused workspaces.<br />One connected weather picture.</p></div>
+        <div class="section-heading"><div><p class="eyebrow">YOUR WORKBENCH</p><h2 id="workspacesTitle">From your sky to the bigger picture.</h2></div><p>Five focused workspaces.<br />One connected weather picture.</p></div>
         <div class="workspace-filters" role="group" aria-label="Filter workspaces"><button type="button" data-filter="all" aria-pressed="true">All workspaces <span>05</span></button><button type="button" data-filter="airport" aria-pressed="false">Airport planning</button><button type="button" data-filter="hazard" aria-pressed="false">Hazard monitoring</button><button type="button" data-filter="analysis" aria-pressed="false">Synoptic analysis</button><span class="sr-only" id="filterResult" role="status" aria-live="polite"></span></div>
         <nav class="workspace-grid" aria-label="Weather workspaces" id="workspaceGrid">
           <a class="workspace-card card-featured" href="wafs.html" data-category="analysis"><div class="card-top"><span class="card-number">01 / THE SYNOPTIC PICTURE</span><svg class="workspace-icon" aria-hidden="true"><use href="#icon-chart" /></svg></div><div class="card-body"><h3>Observation Charts</h3><p>Read the atmosphere, not just the forecast. Explore surface and upper-air observations, synoptic features and soundings.</p></div><div class="featured-bottom"><div class="card-tags"><span>Observed</span><span>Experimental diagnostics</span></div><span class="card-open">Open charts <svg aria-hidden="true"><use href="#icon-arrow" /></svg></span></div><div class="featured-contours" aria-hidden="true"></div></a>
@@ -79,9 +60,10 @@
         </nav>
         <p class="operational-note"><span aria-hidden="true">⊕</span> A workbench for context, not a substitute for official products, operational procedures or professional judgement.</p>
       </section>
-      <section class="about-section" id="about" aria-labelledby="aboutTitle"><div><p class="eyebrow">INDEPENDENT. ALWAYS EVOLVING.</p><h2 id="aboutTitle">Built with curiosity.<br /><em>Grounded in meteorology.</em></h2></div><div class="about-copy"><p>A personal project by meteorologist <strong>Amlan Chatterjee</strong> and his wife, data engineer <strong>Swarnali Chakraborty</strong>. A shared effort to bring better context to aviation weather.</p><a href="mailto:amlanstudy@gmail.com">Feedback, ideas or a conversation <span aria-hidden="true">↗</span></a><details class="developer-note"><summary>Developer’s note &amp; limitations <span aria-hidden="true">+</span></summary><p>As the application gradually reaches more users, we remain committed to improving it through better technology and community feedback. However, no tool can replace the knowledge, experience and judgement of pilots, dispatchers and meteorologists.</p><p>This application uses publicly available weather and aviation data and is intended only as supplementary guidance. It must not replace official products, operational procedures or professional judgement. The developers accept no liability for any consequences arising from its use.</p><p>Feedback and collaboration are welcome at <a href="mailto:amlanstudy@gmail.com">amlanstudy@gmail.com</a>.</p></details></div></section>
+      <section class="about-section" id="about" aria-labelledby="aboutTitle"><div><p class="eyebrow">THE PEOPLE &amp; THE PURPOSE</p><h2 id="aboutTitle">Independent by design.<br><em>Grounded in meteorology.</em></h2></div><div class="about-copy developer-note-fixed"><h3>Developer’s note &amp; limitations</h3><p>Weather machine is a personal project by meteorologist <strong>Amlan Chatterjee</strong> and his wife, data engineer <strong>Swarnali Chakraborty</strong>. A shared effort to bring better context to weather and aviation.</p><p>As the application reaches more users, we remain committed to improving it through better technology and community feedback. No tool can replace the knowledge, experience and judgement of pilots, dispatchers and meteorologists.</p><p>This application uses publicly available weather and aviation data as supplementary guidance. Weather Journal shows model-derived local conditions and forecasts; its images are illustrative. It must not replace official products, operational procedures or professional judgement. The developers accept no liability for consequences arising from its use.</p><p>Feedback and collaboration are welcome at <a href="mailto:amlanstudy@gmail.com">amlanstudy@gmail.com ↗</a>.</p></div></section>
     </main>
     <footer class="site-footer"><span>WEATHER MACHINE <span class="footer-divider">/</span> TAKE-OFF DATA MACHINE</span><a href="#top">Back to the overview <span aria-hidden="true">↑</span></a></footer>
   </div>
+<dialog id="locationDialog" class="location-dialog" aria-labelledby="locationDialogTitle"><div class="location-heading"><div><span class="journal-kicker">WEATHER JOURNAL</span><h2 id="locationDialogTitle">Where is your sky?</h2></div><button id="locationClose" type="button" aria-label="Close location search">×</button></div><form id="locationSearch"><label for="locationQuery">City or town</label><div class="location-search-row"><input id="locationQuery" type="search" placeholder="e.g. Kolkata, India" minlength="2" maxlength="100" required autocomplete="off"><button type="submit">Search</button></div></form><p id="locationSearchStatus" role="status" aria-live="polite">Search by name and choose a matching location.</p><ul id="locationResults"></ul><div class="location-or"><span>or</span></div><button id="useMyLocation" type="button">Use my location ↗</button><p class="location-privacy">Uses approximate coordinates to request a forecast from Open-Meteo. Only your selected location is remembered on this device; no location history is stored.</p></dialog>
 </body>
 </html>
