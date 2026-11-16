@@ -5,7 +5,7 @@
   function apply(value){document.documentElement.dataset.theme=valid(value);document.documentElement.style.colorScheme=['daylight','mist','sandstone'].includes(valid(value))?'light':'dark';}
   let selected='midnight';try{selected=valid(localStorage.getItem('weather-machine-theme'));}catch{}apply(selected);
   function mount(){
-    const host=document.querySelector('.masthead,.desk-masthead,.workspace-masthead,.app-nav');if(!host)return;
+    const host=document.querySelector('.masthead,.desk-masthead,.workspace-masthead,.app-nav,.metar-toolbar');if(!host)return;
     const label=document.createElement('label');label.className='theme-choice';
     const text=document.createElement('span');text.textContent='Theme';const select=document.createElement('select');select.setAttribute('aria-label','Website theme');
     Object.entries(choices).forEach(([value,name])=>{const option=document.createElement('option');option.value=value;option.textContent=name;select.append(option);});
