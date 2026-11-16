@@ -207,10 +207,10 @@ class AppHandler(SimpleHTTPRequestHandler):
         if parsed.path == '/api/storms/jtwc-warnings':
             # JTWC's public RSS is the live index for warning text, the
             # agency's forecast graphic and the associated machine-readable
-            # product.  Only use its Northwest Pacific entries here; NHC/CPHC
-            # remain the source for the Eastern/Central Pacific.
+            # product. Include the Indian Ocean and Southern Hemisphere;
+            # NHC/CPHC remain the source for the Eastern/Central Pacific.
             try:
-                return self.respond_json({'source': 'JTWC public warning index', 'systems': self.jtwc_warnings()})
+                return self.respond_json({'source': 'JTWC public warning index', **self.jtwc_warnings()})
             except Exception as exc:
                 return self.respond_error(f'Unable to read current JTWC warning index: {exc}', 502)
         if parsed.path == '/api/storms/jtwc-tcfa':
@@ -639,33 +639,43 @@ class AppHandler(SimpleHTTPRequestHandler):
         rss = self.fetch_body('https://www.metoc.navy.mil/jtwc/rss/jtwc.rss')
         root = ElementTree.fromstring(rss)
         systems = []
+        warnings = []
+        seen = set()
         for item in root.iter():
             if not item.tag.endswith('item'):
                 continue
             category = next((node.text or '' for node in item if node.tag.endswith('category')), '')
-            # The requested JTWC routing is for the Western Pacific.  Do not
-            # replace the official NHC/CPHC feeds in the East/Central Pacific.
-            if 'Northwest Pacific' not in category:
-                continue
             description = next((node.text or '' for node in item if node.tag.endswith('description')), '')
             issued = next((node.text or '' for node in item if node.tag.endswith('pubDate')), '')
-            blocks = re.finditer(
-                r'(?is)([^<>]{0,160}?)\s+Warning\s*#\s*\d+.*?'
-                r"href=['\"](https://www\.metoc\.navy\.mil/jtwc/products/[a-z]{2}\d{4}web\.txt)['\"].*?TC Warning Text.*?"
-                r"href=['\"](https://www\.metoc\.navy\.mil/jtwc/products/[a-z]{2}\d{4}\.gif)['\"].*?TC Warning Graphic",
-                description,
+            # Identify each warning independently of link order or optional
+            # graphics. Ignore formation-alert INVEST products (90–99) and
+            # East/Central Pacific products, which are supplied by NHC/CPHC.
+            links = re.finditer(
+                r'''href=['"](https://www\.metoc\.navy\.mil/jtwc/products/((wp|io|sh)(\d{2})\d{2})web\.txt)['"]''',
+                description, re.I,
             )
-            for block in blocks:
-                warning_url, graphic_url = block.group(2), block.group(3)
+            for link in links:
+                warning_url, product, basin, number = link.groups()
+                if int(number) >= 90 or product.lower() in seen:
+                    continue
+                seen.add(product.lower())
+                graphic = re.search(r'''href=['"](https://www\.metoc\.navy\.mil/jtwc/products/''' + re.escape(product) + r'''\.gif)['"]''', description, re.I)
+                graphic_url = graphic.group(1) if graphic else None
                 try:
                     parsed = self.jtwc_warning(self.fetch_body(warning_url).decode('utf-8', errors='replace'), warning_url, graphic_url, issued)
                     if parsed:
+                        parsed['basin'] = {'wp': 'Western Pacific', 'io': 'North Indian Ocean', 'sh': 'Southern Hemisphere'}[basin.lower()]
+                        parsed['feed_category'] = category
                         systems.append(parsed)
+                        if not parsed['forecast']:
+                            warnings.append(f"JTWC {product.upper()}: no forecast positions in warning text (final or unsupported product).")
+                    else:
+                        warnings.append(f'JTWC {product.upper()}: warning text could not be decoded.')
                 except Exception:
                     # A single unavailable product must not hide other active
                     # official JTWC warnings.
-                    continue
-        return systems
+                    warnings.append(f'JTWC {product.upper()}: warning text unavailable.')
+        return {'systems': systems, 'warnings': warnings}
 
     def bom_ash_advisories(self):
         """Extract the newest still-active VAA for each volcano from BoM.
